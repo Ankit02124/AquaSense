@@ -49,11 +49,19 @@ def main():
     names = (APP / "models" / "classes.txt").read_text().split()
     det = FishDetector(args.model, names, conf=0.35)
     data = Path(args.data)
-    labels = [p for p in sorted((data / "labels" / "test").glob("*.txt")) if p.read_text().strip()]
+    # frames with at least two fish, one per video so the grid is not four copies of one scene
+    labels = [p for p in sorted((data / "labels" / "test").glob("*.txt"))
+              if sum(line.startswith("0 ") for line in p.read_text().splitlines()) >= 2]
     random.Random(args.seed).shuffle(labels)
+    picked, videos = [], set()
+    for p in labels:
+        video = p.stem.rsplit("-", 1)[0]
+        if video not in videos:
+            videos.add(video)
+            picked.append(p)
 
     rows = []
-    for lbl in labels[:args.n]:
+    for lbl in picked[:args.n]:
         img = cv2.imread(str(data / "images" / "test" / f"{lbl.stem}.jpg"))
         truth, pred = img.copy(), img.copy()
         draw_truth(truth, lbl, names)

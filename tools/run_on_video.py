@@ -33,6 +33,7 @@ def main():
     ap.add_argument("video")
     ap.add_argument("--out", help="write an annotated mp4")
     ap.add_argument("--gif", help="write a short annotated gif")
+    ap.add_argument("--start", type=float, default=0, help="skip the first N seconds of the video")
     ap.add_argument("--gif-seconds", type=float, default=8)
     ap.add_argument("--gif-width", type=int, default=480)
     ap.add_argument("--fps", type=float, default=None, help="analysis rate (default: detect_fps from config)")
@@ -64,9 +65,9 @@ def main():
         if not ok:
             break
         idx += 1
-        if idx % step:
+        if idx % step or idx < args.start * src_fps:
             continue
-        t = idx / src_fps
+        t = idx / src_fps - args.start
         video_t[0] = t
         dets = detector.detect(frame)
         fish = [d for d in dets if d.label == "fish"]
@@ -80,7 +81,9 @@ def main():
         controller.tick()
 
         vis = draw(frame, dets, tracks)
-        cv2.putText(vis, f"fish: {len(fish)}", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        s = vis.shape[1] / 960
+        cv2.putText(vis, f"fish in view: {len(fish)}", (int(12 * s), int(36 * s)), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9 * s, (255, 255, 255), max(1, round(2 * s)), cv2.LINE_AA)
         if args.out:
             if writer is None:
                 h, w = vis.shape[:2]

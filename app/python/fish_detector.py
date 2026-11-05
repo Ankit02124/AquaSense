@@ -110,13 +110,15 @@ class FishDetector:
 def draw(frame, detections, tracks=None):
     colours = {"fish": (0, 200, 255), "shrimp": (255, 160, 0), "crab": (0, 0, 255)}
     out = frame.copy()
+    s = out.shape[1] / 960          # keep lines and text readable at any resolution
+    line, text = max(1, round(2 * s)), max(1, round(1.5 * s))
     for d in detections:
         c = colours.get(d.label, (200, 200, 200))
-        cv2.rectangle(out, (int(d.x1), int(d.y1)), (int(d.x2), int(d.y2)), c, 2)
-        cv2.putText(out, f"{d.label} {d.conf:.2f}", (int(d.x1), max(12, int(d.y1) - 4)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, c, 1, cv2.LINE_AA)
+        cv2.rectangle(out, (int(d.x1), int(d.y1)), (int(d.x2), int(d.y2)), c, line)
+        cv2.putText(out, f"{d.label} {d.conf:.2f}", (int(d.x1), max(int(14 * s), int(d.y1) - int(4 * s))),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5 * s, c, text, cv2.LINE_AA)
     for t in tracks or []:
         pts = [(int(x), int(y)) for _, x, y in t.history]
         for a, b in zip(pts, pts[1:]):
-            cv2.line(out, a, b, (0, 255, 0), 1)
+            cv2.line(out, a, b, (0, 255, 0), line)
     return out
