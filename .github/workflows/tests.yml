@@ -1,0 +1,23 @@
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q
+
+  sketch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - run: arduino-cli core update-index
+      - run: arduino-cli core install arduino:zephyr
+      - run: arduino-cli compile --fqbn arduino:zephyr:unoq app/sketch
