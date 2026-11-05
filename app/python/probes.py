@@ -231,14 +231,15 @@ class FakeProbes:
         if self.aerating and self.condition == "low_oxygen":
             w["do"] = 4.5
         cal, t, g = self.cal, w["t"], self.rng.gauss
-        slope = 3.0 / (cal.ph.v_neutral_mv - cal.ph.v_acid_mv) * (cal.ph.cal_temp_c + chem.KELVIN) / (t + chem.KELVIN)
+        slope, mv7 = chem.ph_line(cal.ph)
+        slope *= (cal.ph.cal_temp_c + chem.KELVIN) / (t + chem.KELVIN)
         ec_t = w["ec"] * (1 + cal.ec.temp_coeff * (t - 25))
         sat = chem.do_saturation_mg_l(t, chem.salinity_pss78(ec_t, t), cal.pressure_kpa)
         m = self.mask
         return RawResult(
             seq=self.seq,
             temp_c=t + g(0, 0.05),
-            ph_mv=cal.ph.v_neutral_mv + (w["ph"] - 7) / slope + g(0, 1) if m & PH else math.nan,
+            ph_mv=mv7 + (w["ph"] - 7) / slope + g(0, 1) if m & PH else math.nan,
             do_mv=w["do"] / sat * chem.do_saturation_voltage_mv(t, cal.do) + g(0, 3) if m & DO else math.nan,
             ec_mv=ec_t / (cal.ec.gain * cal.ec.k_low) + g(0, 0.5) if m & EC else math.nan,
             turb_mv=chem.turbidity_pin_mv_from_ntu(w["ntu"], cal.turbidity) + g(0, 0.2) if m & TURB else math.nan,

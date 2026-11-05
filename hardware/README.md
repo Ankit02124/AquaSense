@@ -74,6 +74,7 @@ The UNO Q running YOLO plus a webcam draws a few watts continuously. The probes 
 
 - Put the DO probe 30-50 cm deep and away from aerator bubbles, they make it read high.
 - Keep the pH probe wet all the time.
+- The stainless steel sheath of most waterproof DS18B20 probes is connected to its ground wire. In the water this ties the circuit ground to the pond and the pH reading drifts or jumps. Cover the sheath with heat-shrink tube, sealed at the tip, so only plastic touches the water.
 - Clean the probes weekly in warm ponds. Algae on the DO membrane makes it read low.
 - Mount the camera rigidly. If it moves, restart the app so it re-learns what normal looks like.
 - The board goes in an IP65 box in the shade. Heat is a bigger problem than rain.

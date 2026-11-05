@@ -22,27 +22,45 @@ C_35_15_0 = 42.914
 
 
 # --------------------------------------------------------------------------
-# pH  (DFRobot Gravity analog pH V2, two-point calibration)
+# pH  (DFRobot Gravity analog pH V2)
 # --------------------------------------------------------------------------
 @dataclass
 class PhCalibration:
     v_neutral_mv: float = 1500.0  # probe output in pH 7.00 buffer
     v_acid_mv: float = 2032.44  # probe output in pH 4.00 buffer
     cal_temp_c: float = 25.0  # buffer temperature during calibration
+    # optional: [[mV, pH], ...] from 3 or more buffers (e.g. pH 4, 7, 10).
+    # When given, a least-squares line is used instead of the two values above.
+    points: list | None = None
+
+
+def ph_line(cal: PhCalibration) -> tuple[float, float]:
+    """Return (slope in pH per mV, mV at pH 7) at the calibration temperature."""
+    if cal.points and len(cal.points) >= 2:
+        mv = [p[0] for p in cal.points]
+        ph = [p[1] for p in cal.points]
+        n = len(mv)
+        mean_mv, mean_ph = sum(mv) / n, sum(ph) / n
+        sxx = sum((x - mean_mv) ** 2 for x in mv)
+        if sxx == 0:
+            raise ValueError("pH calibration voltages must differ")
+        slope = sum((x - mean_mv) * (y - mean_ph) for x, y in zip(mv, ph)) / sxx
+        return slope, mean_mv + (7.0 - mean_ph) / slope
+    if cal.v_neutral_mv == cal.v_acid_mv:
+        raise ValueError("pH calibration voltages must differ")
+    return (7.0 - 4.0) / (cal.v_neutral_mv - cal.v_acid_mv), cal.v_neutral_mv
 
 
 def ph_from_mv(mv: float, cal: PhCalibration, temp_c: float | None = None) -> float:
-    """Convert pH-board millivolts to pH using a two-point linear calibration.
+    """pH from board millivolts (two-point or multi-point calibration).
 
-    If ``temp_c`` is given the electrode slope is corrected with the Nernst
-    relation (slope in mV/pH is proportional to absolute temperature).
+    With ``temp_c`` the electrode slope is corrected with the Nernst relation
+    (mV per pH is proportional to absolute temperature), pivoting around pH 7.
     """
-    if cal.v_neutral_mv == cal.v_acid_mv:
-        raise ValueError("pH calibration voltages must differ")
-    slope = (7.0 - 4.0) / (cal.v_neutral_mv - cal.v_acid_mv)  # pH per mV
+    slope, mv7 = ph_line(cal)
     if temp_c is not None:
         slope *= (cal.cal_temp_c + KELVIN) / (temp_c + KELVIN)
-    return 7.0 + slope * (mv - cal.v_neutral_mv)
+    return 7.0 + slope * (mv - mv7)
 
 
 # --------------------------------------------------------------------------

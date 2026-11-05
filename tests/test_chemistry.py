@@ -66,6 +66,16 @@ class TestPh:
         assert 4.0 < warm < 4.15
         assert chem.ph_from_mv(cal.v_neutral_mv, cal, temp_c=35) == pytest.approx(7.0)
 
+    def test_three_point_calibration(self):
+        # pH 4, 7 and 10 buffers; the probe is slightly non-linear
+        cal = chem.PhCalibration(points=[[2035.0, 4.0], [1500.0, 7.0], [975.0, 10.0]])
+        assert chem.ph_from_mv(1500.0, cal) == pytest.approx(7.0, abs=0.02)
+        assert chem.ph_from_mv(975.0, cal) == pytest.approx(10.0, abs=0.05)
+        assert chem.ph_from_mv(2035.0, cal) == pytest.approx(4.0, abs=0.05)
+        # two points given as a list behave exactly like the old two-value form
+        two = chem.PhCalibration(points=[[1500.0, 7.0], [2032.44, 4.0]])
+        assert chem.ph_from_mv(1800, two) == pytest.approx(chem.ph_from_mv(1800, chem.PhCalibration()))
+
     def test_identical_calibration_points_rejected(self):
         with pytest.raises(ValueError):
             chem.ph_from_mv(1500, chem.PhCalibration(1500, 1500))

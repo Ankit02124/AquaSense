@@ -53,6 +53,7 @@ outputs:
 
 calibration:              # see docs/calibration.md, replace with your probe values
   ph: {v_neutral_mv: 1500.0, v_acid_mv: 2032.44, cal_temp_c: 25.0}
+  # with a pH 10 buffer as well: ph: {cal_temp_c: 27.5, points: [[2041, 4.0], [1512, 7.0], [990, 10.0]]}
   do: {mode: single, cal1_mv: 1600.0, cal1_temp_c: 25.0, cal2_mv: 1300.0, cal2_temp_c: 15.0}
   ec: {k_low: 1.0, k_high: 1.0, temp_coeff: 0.0185}
   turbidity: {divider_ratio: 1.5, clear_water_v: 4.2}

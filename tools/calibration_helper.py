@@ -1,6 +1,7 @@
 """Turn raw probe millivolts (the `raw` column of data/measurements.csv) into config values.
 
     python tools/calibration_helper.py ph  --mv7 1512 --mv4 2041 --temp 27.5
+    python tools/calibration_helper.py ph  --mv7 1512 --mv4 2041 --mv10 990 --temp 27.5
     python tools/calibration_helper.py do  --mv 1585 --temp 28.0
     python tools/calibration_helper.py ec  --mv 233.0 --temp 27.0 --buffer 1.413
     python tools/calibration_helper.py turb --mv 2805
@@ -20,9 +21,10 @@ import chemistry as chem  # noqa: E402
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="probe", required=True)
-    p = sub.add_parser("ph", help="two-point pH (7.00 and 4.00 buffers)")
+    p = sub.add_parser("ph", help="pH from 7.00 and 4.00 buffers, optionally 10.00 too")
     p.add_argument("--mv7", type=float, required=True)
     p.add_argument("--mv4", type=float, required=True)
+    p.add_argument("--mv10", type=float, help="reading in pH 10.00 buffer (recommended for ponds above pH 8)")
     p.add_argument("--temp", type=float, default=25.0)
     d = sub.add_parser("do", help="single-point DO in 100 %% saturated water/air")
     d.add_argument("--mv", type=float, required=True)
@@ -38,9 +40,18 @@ def main() -> None:
     a = ap.parse_args()
 
     if a.probe == "ph":
-        slope_mv = (a.mv4 - a.mv7) / 3.0
-        print(f"slope: {slope_mv:.1f} mV/pH  (DFRobot V2 boards are typically ~170-180 mV/pH after amplification)")
-        print(f"calibration:\n  ph: {{v_neutral_mv: {a.mv7:.1f}, v_acid_mv: {a.mv4:.1f}, cal_temp_c: {a.temp:.1f}}}")
+        if a.mv10 is None:
+            slope_mv = (a.mv4 - a.mv7) / 3.0
+            print(f"slope: {slope_mv:.1f} mV/pH  (DFRobot V2 boards are typically ~170-180 mV/pH after amplification)")
+            print(f"calibration:\n  ph: {{v_neutral_mv: {a.mv7:.1f}, v_acid_mv: {a.mv4:.1f}, cal_temp_c: {a.temp:.1f}}}")
+        else:
+            points = [[a.mv4, 4.0], [a.mv7, 7.0], [a.mv10, 10.0]]
+            cal = chem.PhCalibration(cal_temp_c=a.temp, points=points)
+            slope, _ = chem.ph_line(cal)
+            print(f"slope: {-1 / slope:.1f} mV/pH")
+            for mv, ph in points:
+                print(f"  buffer {ph:5.2f} -> reads {chem.ph_from_mv(mv, cal):5.2f}")
+            print(f"calibration:\n  ph: {{cal_temp_c: {a.temp:.1f}, points: {points}}}")
     elif a.probe == "do":
         sat = chem.do_saturation_mg_l(a.temp)
         print(f"100 % saturation at {a.temp:.1f} degC = {sat:.2f} mg/L (fresh water, sea level)")
