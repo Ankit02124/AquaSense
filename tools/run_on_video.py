@@ -1,0 +1,104 @@
+"""
+Run the same detection + behaviour code that runs on the UNO Q, but on a video
+file on a PC. Useful to tune config.yaml before going to the pond, and it is
+how docs/images/demo.gif was made.
+
+    python tools/run_on_video.py clip.avi --out annotated.mp4
+    python tools/run_on_video.py clip.avi --gif docs/images/demo.gif --gif-seconds 8
+
+The MCU is replaced by FakeProbes, so camera alerts still lead to a (fake)
+measurement and the log looks like the one on the board.
+"""
+
+import argparse
+import logging
+import sys
+from pathlib import Path
+
+import cv2
+import yaml
+
+APP = Path(__file__).resolve().parents[1] / "app" / "python"
+sys.path.insert(0, str(APP))
+
+from behaviour import BehaviourMonitor  # noqa: E402
+from controller import Controller  # noqa: E402
+from fish_detector import FishDetector, draw  # noqa: E402
+from probes import Calibration, FakeProbes  # noqa: E402
+from tracker import CentroidTracker  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("video")
+    ap.add_argument("--out", help="write an annotated mp4")
+    ap.add_argument("--gif", help="write a short annotated gif")
+    ap.add_argument("--gif-seconds", type=float, default=8)
+    ap.add_argument("--gif-width", type=int, default=480)
+    ap.add_argument("--fps", type=float, default=None, help="analysis rate (default: detect_fps from config)")
+    ap.add_argument("--water", default="normal", choices=list(FakeProbes.CONDITIONS))
+    ap.add_argument("--baseline-minutes", type=float, default=None)
+    args = ap.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(name)-10s %(message)s")
+    cfg = yaml.safe_load((APP / "config.yaml").read_text())
+    if args.baseline_minutes is not None:
+        cfg["behaviour"]["baseline_minutes"] = args.baseline_minutes
+    classes = (APP / cfg["model"]["classes"]).read_text().split()
+    detector = FishDetector(APP / cfg["model"]["path"], classes, cfg["model"]["conf"], cfg["model"]["iou"])
+    tracker = CentroidTracker(**cfg["tracker"])
+    monitor = BehaviourMonitor(cfg["behaviour"])
+
+    cap = cv2.VideoCapture(args.video)
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or 25
+    fps = args.fps or cfg["detect_fps"]
+    step = max(1, round(src_fps / fps))
+    video_t = [0.0]
+    probes = FakeProbes(condition=args.water, clock=lambda: video_t[0])
+    controller = Controller(cfg, probes, Calibration.from_config(cfg["calibration"]),
+                            cfg["species_profiles"][cfg["species"]], clock=lambda: video_t[0])
+
+    writer, gif_frames, idx = None, [], 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        idx += 1
+        if idx % step:
+            continue
+        t = idx / src_fps
+        video_t[0] = t
+        dets = detector.detect(frame)
+        fish = [d for d in dets if d.label == "fish"]
+        tracks = tracker.update(fish, t)
+        result = monitor.add_frame(t, frame, fish, tracks)
+        if result:
+            s = result.summary
+            print(f"t={t:6.1f}s fish={s['n_fish']:.0f} surface={s['surface_ratio']:.2f} "
+                  f"speed={s['mean_speed']:.2f} {','.join(result.alerts) or ('ok' if result.baseline_ready else 'learning')}")
+            controller.on_behaviour(result)
+        controller.tick()
+
+        vis = draw(frame, dets, tracks)
+        cv2.putText(vis, f"fish: {len(fish)}", (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        if args.out:
+            if writer is None:
+                h, w = vis.shape[:2]
+                writer = cv2.VideoWriter(args.out, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+            writer.write(vis)
+        if args.gif and t <= args.gif_seconds:
+            h, w = vis.shape[:2]
+            small = cv2.resize(vis, (args.gif_width, int(h * args.gif_width / w)), interpolation=cv2.INTER_AREA)
+            gif_frames.append(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+    if writer:
+        writer.release()
+    if gif_frames:
+        from PIL import Image
+
+        imgs = [Image.fromarray(f) for f in gif_frames]
+        imgs[0].save(args.gif, save_all=True, append_images=imgs[1:], duration=int(1000 / fps), loop=0, optimize=True)
+        print("gif written:", args.gif)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,7 @@
+# install a CUDA build of torch first if you have an NVIDIA GPU:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+ultralytics>=8.3
+kaggle
+onnx
+onnxslim
+onnxruntime
