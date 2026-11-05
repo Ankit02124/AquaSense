@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# site settings
+app/python/config.local.yaml
+
+# created on the board at runtime
+app/data/
+app/.cache/
+
+# datasets and training runs (download with the kaggle CLI, see training/README.md)
+data/
+runs/
+*.cache
+yolov8n.pt
+yolo11n.pt
+
+# Arduino build output
+build/
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
