@@ -1,0 +1,87 @@
+# AquaSense settings. Put your own values (species, calibration) in
+# config.local.yaml next to this file, it overrides whole sections from here.
+
+species: tilapia          # key from species_profiles below
+altitude_m: 0             # used for the oxygen saturation pressure correction
+
+camera:
+  source: "usb:0"         # usb:0, /dev/video0 or csi:0
+  resolution: [640, 480]
+  fps: 10
+
+detect_fps: 3             # frames per second sent to YOLO (the A53 cores manage ~3-4 at 416 px)
+
+model:
+  path: models/aquasense_yolov8n_416.onnx
+  classes: models/classes.txt
+  conf: 0.35
+  iou: 0.5
+  threads: 4
+
+tracker:
+  max_jump: 2.0           # body lengths a fish may move between two frames
+  max_missed: 4
+  still_speed: 0.1        # body lengths/s below which a fish counts as not moving
+
+behaviour:
+  window_s: 10            # summarise every 10 s
+  baseline_minutes: 5     # learn what normal looks like after start-up
+  surface_band: 0.25      # top 25 % of the image is "surface" (side view of a tank)
+  surface_ratio_min: 0.6  # at least 60 % of the fish near the surface before it counts as crowding
+  active_speed: 0.3       # BL/s
+  min_fish: 3             # behaviour rules need at least this many fish in view
+  missing_ratio: 0.3      # fewer than 30 % of the usual count -> fish_missing
+  still_minutes: 3        # a fish not moving for this long -> motionless_fish
+  green_jump: 0.03
+  clarity_drop: 0.6
+  z: 3.0                  # how many standard deviations away from normal counts as abnormal
+
+trigger:
+  confirm_windows: 2      # same alert in 2 windows (20 s) before probes are switched on
+  cooldown_min: 15
+  followup_min: 10
+  scheduled: ["05:00", "15:00"]
+  measure_on_start: true
+  timeout_s: 120
+
+probes:
+  warmup_ms: {ph: 15000, do: 10000, ec: 5000, turbidity: 2000}
+
+outputs:
+  buzzer: true            # beep when a reading is CRITICAL
+  auto_aerator: false     # switch the aerator relay (D8) when oxygen is low
+
+calibration:              # see docs/calibration.md, replace with your probe values
+  ph: {v_neutral_mv: 1500.0, v_acid_mv: 2032.44, cal_temp_c: 25.0}
+  do: {mode: single, cal1_mv: 1600.0, cal1_temp_c: 25.0, cal2_mv: 1300.0, cal2_temp_c: 15.0}
+  ec: {k_low: 1.0, k_high: 1.0, temp_coeff: 0.0185}
+  turbidity: {divider_ratio: 1.5, clear_water_v: 4.2}
+  tds_factor: 0.5
+
+# warn_* = outside the comfortable range, crit_* = dangerous.
+# Values collected from FAO/extension guides, adjust for your farm.
+species_profiles:
+  tilapia:
+    temperature_c: {crit_low: 16, warn_low: 22, warn_high: 32, crit_high: 36}
+    ph:            {crit_low: 6.0, warn_low: 6.5, warn_high: 8.5, crit_high: 9.5}
+    do_mg_l:       {crit_low: 3.0, warn_low: 4.0}
+    salinity_ppt:  {warn_high: 10, crit_high: 20}
+    turbidity_ntu: {warn_high: 60, crit_high: 150}
+  indian_major_carp:      # rohu, catla, mrigal
+    temperature_c: {crit_low: 15, warn_low: 22, warn_high: 33, crit_high: 36}
+    ph:            {crit_low: 6.0, warn_low: 7.0, warn_high: 8.5, crit_high: 9.5}
+    do_mg_l:       {crit_low: 3.0, warn_low: 5.0}
+    salinity_ppt:  {warn_high: 2, crit_high: 5}
+    turbidity_ntu: {warn_high: 60, crit_high: 150}
+  pangasius:
+    temperature_c: {crit_low: 18, warn_low: 24, warn_high: 32, crit_high: 35}
+    ph:            {crit_low: 5.5, warn_low: 6.5, warn_high: 8.5, crit_high: 9.5}
+    do_mg_l:       {crit_low: 2.0, warn_low: 3.0}
+    salinity_ppt:  {warn_high: 5, crit_high: 10}
+    turbidity_ntu: {warn_high: 80, crit_high: 200}
+  vannamei_shrimp:
+    temperature_c: {crit_low: 20, warn_low: 26, warn_high: 32, crit_high: 35}
+    ph:            {crit_low: 7.0, warn_low: 7.5, warn_high: 8.5, crit_high: 9.0}
+    do_mg_l:       {crit_low: 3.0, warn_low: 4.0}
+    salinity_ppt:  {crit_low: 2, warn_low: 10, warn_high: 30, crit_high: 40}
+    turbidity_ntu: {warn_high: 60, crit_high: 150}
