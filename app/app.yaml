@@ -1,0 +1,3 @@
+name: AquaSense
+icon: 🐟
+description: Pond monitor. A YOLOv8 model watches the fish through a USB camera and switches on the water quality probes (DO, pH, salinity, turbidity, temperature) when their behaviour looks wrong.
