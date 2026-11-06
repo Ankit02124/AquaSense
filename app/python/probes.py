@@ -126,7 +126,7 @@ def to_reading(raw, cal, now=None):
 
 
 class McuProbes:
-    """The real thing: arduino.app_utils.Bridge on the UNO Q."""
+    """Talks to the STM32 through arduino.app_utils.Bridge (only available on the UNO Q)."""
 
     def __init__(self, bridge=None, timeout=5):
         if bridge is None:

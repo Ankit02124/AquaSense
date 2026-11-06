@@ -7,7 +7,7 @@ venv/
 # site settings
 app/python/config.local.yaml
 
-# created on the board at runtime
+# created by the app at runtime
 app/data/
 app/.cache/
 

@@ -1,5 +1,7 @@
 # Hardware
 
+This is the design. The shield and the probe wiring have not been built or tested yet.
+
 ![wiring](wiring_diagram.svg)
 
 ## Parts
@@ -11,7 +13,7 @@
 | DFRobot Gravity analog DO kit (SEN0237) | dissolved oxygen | galvanic probe, output 0-3.0 V |
 | DFRobot Gravity analog pH V2 (SEN0161-V2) | pH | output 0-3.0 V |
 | DFRobot DFR0300 (K=1), or SEN0451 (K=10) for brackish ponds | conductivity, salinity | K=1 probe tops out around 20 mS/cm |
-| DFRobot SEN0189 | turbidity | runs on 5 V, output up to 4.5 V so it needs a divider |
+| DFRobot SEN0189 | turbidity | needs a 5 V supply, output up to 4.5 V so it needs a divider |
 | 2x DFRobot DFR0504 analog signal isolator | pH and EC channels | stops the probes interfering through the water |
 | DS18B20 waterproof probe + DS2484 (or DS2482-100) breakout | water temperature | DS2484 sits on the Qwiic port |
 | 4x AO3401A P-MOSFET, 4x BC547, resistors, caps | probe power switches | see schematics below |
@@ -42,7 +44,7 @@ All MCU pins on the UNO Q are 3.3 V. A0-A5 are not 5 V tolerant when used as ana
 | VIN | 12 V |
 | USB-C | hub → webcam |
 
-The on-board RGB LED3 shows the last water status (green ok, blue measuring, yellow warning, red critical) and stays off until the first reading. LED4 is a link heartbeat: it blinks blue until Linux first talks to the MCU, then green every 3 s (main.py pings the MCU once a minute), and red if Linux has been silent for 15 minutes.
+The UNO Q's built-in RGB LED3 shows the last water status (green ok, blue measuring, yellow warning, red critical) and stays off until the first reading. LED4 is a link heartbeat: it blinks blue until Linux first talks to the MCU, then green every 3 s (main.py pings the MCU once a minute), and red if Linux has been silent for 15 minutes.
 
 ## Schematics
 

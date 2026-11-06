@@ -13,7 +13,7 @@ Arduino App Lab starts both halves together: it flashes the sketch to the STM32 
 
 ## 1. Fish detection
 
-`fish_detector.py` runs a YOLOv8n model exported to ONNX at 416x416. Preprocessing (letterbox, BGR to RGB, scale to 0-1) and NMS are written in numpy, so the board only needs `onnxruntime`. There is no torch or ultralytics on the UNO Q.
+`fish_detector.py` runs a YOLOv8n model exported to ONNX at 416x416. Preprocessing (letterbox, BGR to RGB, scale to 0-1) and NMS are written in numpy, so the UNO Q side only needs `onnxruntime`, not torch or ultralytics.
 
 The model was trained on the Brackish Dataset, which is footage from a fixed underwater camera in murky brackish water (see [training/README.md](../training/README.md)). It detects fish, crab, shrimp, jellyfish and starfish. Only `fish` is used for the behaviour checks.
 
@@ -137,4 +137,4 @@ The project has no web app. Everything is visible in the App Lab console and in 
 - `events.csv`: camera alerts that started a measurement, and failed measurements
 - `snapshots/`: annotated camera frames saved whenever an alert fires
 
-On the board itself, LED3 shows the water status, the buzzer sounds on CRITICAL, and the optional relay can start an aerator. The aerator is switched off again only when DO is 1 mg/L above the warning level (`aerator_off_margin`), so it does not toggle on every reading near the limit. LED4 blinks green while Linux keeps talking to the MCU (it pings once a minute) and red if it stops.
+Locally, LED3 shows the water status, the buzzer sounds on CRITICAL, and the optional relay can start an aerator. The aerator is switched off again only when DO is 1 mg/L above the warning level (`aerator_off_margin`), so it does not toggle on every reading near the limit. LED4 blinks green while Linux keeps talking to the MCU (it pings once a minute) and red if it stops.

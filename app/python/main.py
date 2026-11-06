@@ -1,4 +1,4 @@
-"""AquaSense - Linux side, started by Arduino App Lab on the UNO Q.
+"""AquaSense - Linux side, meant to be started by Arduino App Lab on the UNO Q.
 
 camera -> YOLOv8n (fish) -> tracker -> behaviour checks -> controller -> MCU probes
 """

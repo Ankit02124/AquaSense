@@ -1,5 +1,5 @@
 """
-Run the same detection + behaviour code that runs on the UNO Q, but on a video
+Run the same detection + behaviour code the UNO Q app uses, but on a video
 file on a PC. Useful to tune config.yaml before going to the pond, and it is
 how docs/images/demo.gif was made.
 
@@ -8,7 +8,7 @@ how docs/images/demo.gif was made.
     python tools/run_on_video.py pond.mp4 --save-raw frames/ --raw-every 5   # clean frames for labelling
 
 The MCU is replaced by FakeProbes, so camera alerts still lead to a (fake)
-measurement and the log looks like the one on the board.
+measurement and the log has the same format as the app's log.
 """
 
 import argparse

@@ -58,7 +58,7 @@ Test split (1,468 frames), from `evaluate.py`:
 | 416 | jellyfish | 0.966 | 0.855 | 0.920 | 0.595 |
 | 416 | starfish | 0.997 | 0.990 | 0.995 | 0.889 |
 
-416 px is what runs on the board. Keep in mind the per-frame split noted above: these numbers say the model learned this camera well, not how it will do on a different pond.
+416 px is the input size the app uses. Keep in mind the per-frame split noted above: these numbers say the model learned this camera well, not how it will do on a different pond.
 
 ![training curves](results/results.png)
 
@@ -77,7 +77,7 @@ python training/export.py --weights training/weights/yolov8n_brackish_best.pt --
 python training/evaluate.py --weights training/weights/yolov8n_brackish_best.pt --data data/brackish-yolo/brackish.yaml
 ```
 
-`export.py` writes `app/python/models/aquasense_yolov8n_416.onnx` (opset 12, no NMS in the graph) and `classes.txt`. 416 px is a compromise: at 640 px small fish are found more often (see the accuracy table above), but a 640 px input has about 2.4x the pixels of a 416 px one, so it needs roughly that much more compute per frame. `tools/benchmark.py` measures the real speed on the board.
+`export.py` writes `app/python/models/aquasense_yolov8n_416.onnx` (opset 12, no NMS in the graph) and `classes.txt`. 416 px is a compromise: at 640 px small fish are found more often (see the accuracy table above), but a 640 px input has about 2.4x the pixels of a 416 px one, so it needs roughly that much more compute per frame. `tools/benchmark.py` can measure the speed on a UNO Q (not done yet).
 
 ## Fine-tuning on your own pond
 

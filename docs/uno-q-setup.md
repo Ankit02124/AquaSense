@@ -1,4 +1,6 @@
-# Running it on the Arduino UNO Q
+# Setting it up on the Arduino UNO Q
+
+These are setup instructions. The project has not been run on a UNO Q yet, so expect to fix things on the first run.
 
 ## What gets installed where
 
@@ -10,7 +12,7 @@ app/                         <- this folder is the Arduino App Lab app
 │   ├── config.h             pins, ADC, warm-up times
 │   ├── ds2484.h             DS2484 + DS18B20 driver
 │   └── sketch.yaml          board platform (arduino:zephyr)
-├── python/                  runs on Debian inside the App Lab container
+├── python/                  Debian side, inside the App Lab container
 │   ├── main.py              entry point
 │   ├── requirements.txt     onnxruntime, PyYAML (installed by App Lab)
 │   ├── config.yaml
@@ -29,7 +31,7 @@ app/                         <- this folder is the Arduino App Lab app
    scp -r app arduino@<board-ip>:~/ArduinoApps/aquasense
    ```
 
-3. **Connect the camera.** Plug the webcam into a powered USB-C hub on the board's USB-C port, and power the board from VIN. Check it shows up with `ls /dev/video*` in the App Lab terminal. If it is not `video0`, change `camera.source` in the config.
+3. **Connect the camera.** Plug the webcam into a powered USB-C hub connected to the UNO Q's USB-C port, and power the board from VIN. Check it shows up with `ls /dev/video*` in the App Lab terminal. If it is not `video0`, change `camera.source` in the config.
 
 4. **Site settings.** Create `app/python/config.local.yaml` with only what differs from `config.yaml`. It is merged into `config.yaml` key by key (nested sections too), so `behaviour: {surface_band: 1.0}` changes just that value. Also set `timezone` if you are not in India, the 05:00 / 15:00 checks use it:
 
@@ -74,7 +76,7 @@ If it is too slow, lower `detect_fps`, or export a 320 px model with `python tra
 
 | problem | what to check |
 |---|---|
-| `MCU:` line never appears / Bridge errors | sketch did not compile or flash; update the board; on the board run `arduino-app-cli system cleanup` and `docker network prune`, then reboot |
+| `MCU:` line never appears / Bridge errors | sketch did not compile or flash; update the board; in the board's terminal run `arduino-app-cli system cleanup` and `docker network prune`, then reboot |
 | no camera frames | `ls /dev/video*`, powered hub, `camera.source` |
 | flag 1 in the result | DS2484 not found on Qwiic, or the DS18B20 is not wired. Temperature falls back to 25 C for compensation |
 | flag 2 in the result | an analog input reached 3.3 V, check the turbidity divider and isolator supply |

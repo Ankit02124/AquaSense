@@ -1,4 +1,4 @@
-"""CSV logs and snapshots, written to the app's data/ folder on the UNO Q."""
+"""CSV logs and snapshots, written to the app's data/ folder."""
 
 import csv
 import json

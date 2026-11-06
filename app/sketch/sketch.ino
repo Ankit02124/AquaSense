@@ -118,7 +118,7 @@ static float readNtcCelsius() {
 }
 #endif
 
-// on-board RGB LEDs are active low
+// the UNO Q's built-in RGB LEDs are active low
 static void setLed3(bool r, bool g, bool b) {
   digitalWrite(LED3_R, r ? LOW : HIGH);
   digitalWrite(LED3_G, g ? LOW : HIGH);
@@ -334,7 +334,7 @@ void setup() {
   digitalWrite(LED4_B, HIGH);
   showLevel();
 
-  // no pinMode() on the analog inputs: on the UNO Q core it stops analogRead() working
+  // no pinMode() on the analog inputs: it is reported to stop analogRead() working on the UNO Q core
   analogReadResolution(ADC_BITS);
 
 #if TEMP_SENSOR == TEMP_SENSOR_DS2484
