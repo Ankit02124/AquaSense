@@ -7,6 +7,7 @@ from probes import Calibration, FakeProbes
 
 def make(cfg, clock, condition="normal", **trigger):
     cfg["trigger"].update({"measure_on_start": False, "scheduled": [], **trigger})
+    cfg["timezone"] = None  # test timestamps are in the machine's local time
     probes = FakeProbes(condition=condition, duration=3, clock=clock)
     ctl = Controller(cfg, probes, Calibration(), cfg["species_profiles"]["tilapia"], clock=clock)
     return ctl, probes
@@ -47,16 +48,38 @@ def test_camera_trigger_then_cooldown(cfg, clock):
     assert ctl.reason == "follow-up"
 
 
-def test_auto_aerator(cfg, clock):
+def test_auto_aerator_with_hysteresis(cfg, clock):
     cfg["outputs"]["auto_aerator"] = True
     ctl, probes = make(cfg, clock, "low_oxygen")
     ctl.request("manual")
     finish(ctl, clock)
+    assert probes.aerating                       # 2.1 mg/L, below warn_low 4.0
+    ctl._aerator(4.4)                            # back above warn_low but inside the margin
     assert probes.aerating
     probes.condition = "normal"
     ctl.request("manual")
     finish(ctl, clock)
-    assert not probes.aerating
+    assert not probes.aerating                   # 6.8 mg/L >= 4.0 + 1.0
+
+
+def test_mcu_not_answering_is_retried(cfg, clock):
+    ctl, probes = make(cfg, clock)
+    probes.status = lambda: ("ERROR", 0, 0, 0)    # what McuProbes.status() returns on a Bridge failure
+    ctl.request("manual")
+    ctl.tick()
+    ctl.tick()
+    assert not ctl.busy and ctl.next_followup is not None
+    del probes.status                            # MCU answers again
+    clock.advance(ctl.followup_s + 1)
+    ctl.tick()
+    assert ctl.busy and ctl.reason == "follow-up"
+
+
+def test_alerts_of_different_kinds_count_together(cfg, clock):
+    ctl, _ = make(cfg, clock)
+    ctl.on_behaviour(WindowResult(0, {}, ["surface_crowding"], True))
+    ctl.on_behaviour(WindowResult(10, {}, ["water_colour"], True))
+    assert ctl.pending == "camera"
 
 
 def test_timeout_switches_probes_off(cfg, clock):

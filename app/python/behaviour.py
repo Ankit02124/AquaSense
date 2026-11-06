@@ -13,6 +13,9 @@ Rules (each one names the problem it suggests):
     fish_missing       far fewer fish visible -> hiding, sick at the bottom
     motionless_fish    a fish has not moved for minutes -> dead or sick fish
     water_colour       green/turbid water -> algal bloom
+
+The fish rules only run when at least `min_fish` fish are normally in view.
+Windows darker than `dark_level` (night, no IR light) raise no alerts at all.
 """
 
 import statistics
@@ -30,15 +33,17 @@ class WindowResult:
     summary: dict
     alerts: list = field(default_factory=list)
     baseline_ready: bool = False
+    too_dark: bool = False
 
 
 def water_colour(frame_bgr):
-    """Excess-green index and a clarity score (log of Laplacian variance)."""
+    """Excess-green index, a clarity score (log of Laplacian variance) and mean brightness 0-255."""
     small = cv2.resize(frame_bgr, (96, 54), interpolation=cv2.INTER_AREA).astype(np.float32)
     total = small.sum(axis=2) + 1e-6
     b, g, r = small[..., 0] / total, small[..., 1] / total, small[..., 2] / total
     gray = cv2.cvtColor(small.astype(np.uint8), cv2.COLOR_BGR2GRAY)
-    return float((2 * g - r - b).mean()), float(np.log1p(cv2.Laplacian(gray, cv2.CV_32F).var()))
+    return (float((2 * g - r - b).mean()), float(np.log1p(cv2.Laplacian(gray, cv2.CV_32F).var())),
+            float(gray.mean()))
 
 
 class Baseline:
@@ -77,7 +82,7 @@ class BehaviourMonitor:
     def add_frame(self, t, frame_bgr, fish, tracks):
         """fish: fish detections in this frame, tracks: tracker output for those fish."""
         h = frame_bgr.shape[0]
-        green, clarity = water_colour(frame_bgr)
+        green, clarity, brightness = water_colour(frame_bgr)
         moving = [tr.speed for tr in tracks if len(tr.history) > 1]
         self._frames.append({
             "n_fish": len(fish),
@@ -86,21 +91,27 @@ class BehaviourMonitor:
             "active_ratio": (sum(s > self.cfg["active_speed"] for s in moving) / len(moving)) if moving else 0.0,
             "green_index": green,
             "clarity": clarity,
+            "brightness": brightness,
+            "longest_still_s": max((t - tr.still_since for tr in tracks if tr.still_since is not None), default=0.0),
         })
-        still = [t - tr.still_since for tr in tracks if tr.still_since is not None]
-        self._longest_still = max(still, default=0.0)
 
         if self._window_start is None:
             self._window_start = t
         if t - self._window_start < self.window_s:
             return None
         summary = {m: statistics.median(f[m] for f in self._frames) for m in METRICS}
-        summary["longest_still_s"] = self._longest_still
+        summary["longest_still_s"] = max(f["longest_still_s"] for f in self._frames)
+        summary["brightness"] = statistics.median(f["brightness"] for f in self._frames)
         self._frames, self._window_start = [], t
         return self._evaluate(t, summary)
 
     def _evaluate(self, t, s):
         res = WindowResult(t, s, baseline_ready=self.baseline.ready)
+        if s["brightness"] < self.cfg.get("dark_level", 0):
+            # too dark to see the fish (night without IR light): no alerts, and don't
+            # let a black image become part of "normal"
+            res.too_dark = True
+            return res
         if not self.baseline.ready:
             self.baseline.update(s)
             return res

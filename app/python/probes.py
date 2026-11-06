@@ -7,7 +7,8 @@ allowed to block, so Python starts a run and then polls for the result.
 RPC functions provided by sketch.ino:
     aq_ping()                  -> "AquaSense MCU <version>"
     aq_start(mask)             -> 1 if accepted, 0 if busy
-    aq_status()                -> "IDLE|BUSY|DONE|ERROR,<step>,<total>,<seq>"
+    aq_status()                -> "IDLE|BUSY|DONE,<step>,<total>,<seq>"
+                                  (McuProbes.status() reports "ERROR" itself when the MCU doesn't answer)
     aq_result()                -> "R1;seq=..;t=..;ph=..;do=..;ec=..;tu=..;f=.."
     aq_abort()                 -> 1
     aq_indicator(level)        -> 1   0 ok, 1 measuring, 2 warning, 3 critical
@@ -15,6 +16,7 @@ RPC functions provided by sketch.ino:
     aq_set_warmup(channel, ms) -> 1   channel 1 pH, 2 DO, 3 EC, 4 turbidity
 """
 
+import logging
 import math
 import random
 import time
@@ -26,7 +28,9 @@ TEMP, PH, DO, EC, TURB = 1, 2, 4, 8, 16
 ALL_PROBES = TEMP | PH | DO | EC | TURB
 WARMUP_CHANNEL = {"ph": 1, "do": 2, "ec": 3, "turbidity": 4}
 
-FLAG_TEMP_FAIL, FLAG_ADC_SAT, FLAG_ABORTED, FLAG_TIMEOUT = 1, 2, 4, 8
+FLAG_TEMP_FAIL, FLAG_ADC_SAT, FLAG_TIMEOUT = 1, 2, 8
+
+log = logging.getLogger("probes")
 
 
 @dataclass
@@ -132,13 +136,20 @@ class McuProbes:
         self.timeout = timeout
 
     def _call(self, name, *args):
+        """Returns None instead of raising when the MCU does not answer (timeout,
+        router not running, sketch being re-flashed), so the main loop keeps going."""
         try:
-            return self.bridge.call(name, *args, timeout=self.timeout)
-        except TypeError:  # older app_utils without the timeout argument
-            return self.bridge.call(name, *args)
+            try:
+                return self.bridge.call(name, *args, timeout=self.timeout)
+            except TypeError:  # older app_utils without the timeout argument
+                return self.bridge.call(name, *args)
+        except Exception as e:
+            log.warning("Bridge call %s failed: %s", name, e)
+            return None
 
     def ping(self):
-        return str(self._call("aq_ping"))
+        reply = self._call("aq_ping")
+        return "not answering" if reply is None else str(reply)
 
     def set_warmups(self, warmup_ms):
         for name, ms in warmup_ms.items():
@@ -148,12 +159,15 @@ class McuProbes:
         return bool(self._call("aq_start", int(mask)))
 
     def status(self):
-        state, step, total, seq = (str(self._call("aq_status")).split(",") + ["0"] * 4)[:4]
+        reply = self._call("aq_status")
+        if reply is None:
+            return "ERROR", 0, 0, 0
+        state, step, total, seq = (str(reply).split(",") + ["0"] * 4)[:4]
         return state, int(step), int(total), int(seq)
 
     def result(self):
-        text = str(self._call("aq_result"))
-        return RawResult.parse(text) if text.startswith("R1") else None
+        text = self._call("aq_result")
+        return RawResult.parse(text) if isinstance(text, str) and text.startswith("R1") else None
 
     def abort(self):
         self._call("aq_abort")

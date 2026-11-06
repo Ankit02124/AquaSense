@@ -45,7 +45,7 @@ class DataLog:
         s = result.summary
         keys = sorted(s)
         self._append(self.window_file, ["time", *keys, "alerts"],
-                     [self._stamp(result.t), *[round(s[k], 3) for k in keys], ";".join(result.alerts)])
+                     [self._stamp(), *[round(s[k], 3) for k in keys], ";".join(result.alerts)])
 
     def snapshot(self, frame, tag):
         name = time.strftime("%Y%m%d_%H%M%S") + f"_{tag}.jpg"

@@ -1,14 +1,19 @@
 """Decides when the probes are switched on.
 
 A measurement is started when:
-  - the camera reports the same kind of problem for `confirm_windows` windows in a row
+  - the camera reports alerts in `confirm_windows` windows in a row
+    (any alert counts, they don't have to be the same kind)
   - a scheduled time is reached (default 05:00, when oxygen is lowest and the
     camera cannot see much, and 15:00, when pH and temperature peak)
   - the last result was WARNING/CRITICAL (follow-up every `followup_min`)
   - at start-up, to have one reference reading
 
 After a camera-triggered measurement, further camera triggers are ignored for
-`cooldown_min` so the probes are not cycled all day by one event.
+`cooldown_min` so the probes are not cycled all day by one event. A failed
+measurement (MCU not answering, timeout) is retried after `followup_min`.
+
+Durations use a monotonic clock, so a clock change at boot (NTP sync) does not
+break timeouts. Scheduled times use the wall clock in `timezone` from the config.
 """
 
 import logging
@@ -21,22 +26,38 @@ from probes import ALL_PROBES, to_reading
 log = logging.getLogger("controller")
 
 
+def _timezone(name):
+    if not name:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(name)
+    except Exception:  # no tz database (e.g. Windows without tzdata)
+        log.warning("timezone %s not available, using the system's local time", name)
+        return None
+
+
 class Controller:
-    def __init__(self, cfg, probes, calibration, profile, datalog=None, clock=time.time):
+    def __init__(self, cfg, probes, calibration, profile, datalog=None, clock=time.time, mono=None):
         t = cfg["trigger"]
         self.probes, self.cal, self.profile, self.datalog = probes, calibration, profile, datalog
-        self.clock = clock
+        self.clock = clock                                   # wall clock: schedule, timestamps
+        self.mono = mono or (time.monotonic if clock is time.time else clock)
+        self.tz = _timezone(cfg.get("timezone"))
         self.confirm = t["confirm_windows"]
         self.cooldown_s = t["cooldown_min"] * 60
         self.followup_s = t["followup_min"] * 60
         self.timeout_s = t["timeout_s"]
         self.schedule = [tuple(map(int, s.split(":"))) for s in t["scheduled"]]
-        self.auto_aerator = cfg["outputs"]["auto_aerator"]
-        self.use_buzzer = cfg["outputs"]["buzzer"]
+        out = cfg["outputs"]
+        self.auto_aerator = out["auto_aerator"]
+        self.aerator_margin = out.get("aerator_off_margin", 1.0)
+        self.use_buzzer = out["buzzer"]
 
         self.busy = False
         self.pending = "startup" if t["measure_on_start"] else None
         self.pending_alerts = []
+        self.reason, self.alerts = None, []
         self.cooldown_until = 0.0
         self.next_followup = None
         self.started_at = 0.0
@@ -47,12 +68,10 @@ class Controller:
 
     def on_behaviour(self, result):
         """Called once per behaviour window."""
-        if result.alerts:
-            self.streak += 1
-        else:
-            self.streak = 0
-        if self.streak >= self.confirm and not self.busy and self.clock() >= self.cooldown_until:
-            log.warning("camera: %s for %d windows, measuring water", ", ".join(result.alerts), self.streak)
+        self.streak = self.streak + 1 if result.alerts else 0
+        if self.streak >= self.confirm and not self.busy and self.mono() >= self.cooldown_until:
+            log.warning("camera: %s, alerts in %d windows in a row, measuring water",
+                        ", ".join(result.alerts), self.streak)
             if self.datalog:
                 self.datalog.event("camera_alert", ";".join(result.alerts), result.summary)
             self.request("camera", result.alerts)
@@ -65,21 +84,20 @@ class Controller:
         return True
 
     def tick(self):
-        now = self.clock()
         if self.busy:
-            self._poll(now)
+            self._poll(self.mono())
             return
         if not self.pending:
-            self._check_timers(now)
+            self._check_timers()
         if self.pending:
-            self._start(now)
+            self._start(self.mono())
 
-    def _check_timers(self, now):
-        if self.next_followup and now >= self.next_followup:
+    def _check_timers(self):
+        if self.next_followup and self.mono() >= self.next_followup:
             self.next_followup = None
             self.request("follow-up")
             return
-        local = datetime.fromtimestamp(now)
+        local = datetime.fromtimestamp(self.clock(), self.tz)
         for hh, mm in self.schedule:
             late = local.hour * 60 + local.minute - (hh * 60 + mm)
             key = (local.date(), hh, mm)
@@ -102,19 +120,23 @@ class Controller:
         if state == "DONE":
             raw = self.probes.result()
             if raw is not None:
-                self._finish(raw, now)
+                self._finish(raw)
                 return
         if state == "ERROR" or now - self.started_at > self.timeout_s:
-            log.error("measurement failed (%s), probes switched off", state)
+            reason = "MCU not answering" if state == "ERROR" else "timeout"
+            log.error("measurement failed (%s), probes switched off, retrying in %d min",
+                      reason, self.followup_s // 60)
             self.probes.abort()
             self.busy = False
+            self.next_followup = now + self.followup_s
             self.probes.indicator(self.last_level)
             if self.datalog:
-                self.datalog.event("measurement_failed", state, {})
+                self.datalog.event("measurement_failed", reason, {})
 
-    def _finish(self, raw, now):
+    def _finish(self, raw):
         self.busy = False
-        reading = to_reading(raw, self.cal, now)
+        now = self.mono()
+        reading = to_reading(raw, self.cal, self.clock())
         level, rows, tips = water_check.check(reading, self.profile, self.alerts)
         self.last_level = level
 
@@ -130,12 +152,23 @@ class Controller:
 
         self.probes.indicator(level)
         self.probes.buzzer(self.use_buzzer and level == water_check.CRITICAL)
-        low_do = water_check.classify(reading.do_mg_l, self.profile.get("do_mg_l"))[1] == "low"
-        if self.auto_aerator and low_do != self.aerator_on and reading.do_mg_l is not None:
-            self.aerator_on = low_do
-            self.probes.aerator(low_do)
-            log.warning("aerator %s", "ON" if low_do else "OFF")
+        self._aerator(reading.do_mg_l)
 
         self.next_followup = now + self.followup_s if level >= water_check.WARNING else None
         if self.reason == "camera":
             self.cooldown_until = now + self.cooldown_s
+
+    def _aerator(self, do):
+        """On below the species' warn_low for DO, off only once DO is `aerator_off_margin` above it."""
+        lim = self.profile.get("do_mg_l") or {}
+        low = lim.get("warn_low", lim.get("crit_low"))
+        if not self.auto_aerator or do is None or low is None:
+            return
+        if not self.aerator_on and do < low:
+            self.aerator_on = True
+        elif self.aerator_on and do >= low + self.aerator_margin:
+            self.aerator_on = False
+        else:
+            return
+        self.probes.aerator(self.aerator_on)
+        log.warning("aerator %s (DO %.2f mg/L)", "ON" if self.aerator_on else "OFF", do)

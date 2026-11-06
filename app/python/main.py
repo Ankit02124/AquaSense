@@ -7,7 +7,6 @@ import logging
 import time
 from pathlib import Path
 
-import yaml
 from arduino.app_peripherals.camera import Camera
 from arduino.app_utils import App
 
@@ -16,6 +15,7 @@ from controller import Controller
 from datalog import DataLog
 from fish_detector import FishDetector, draw
 from probes import Calibration, McuProbes
+from settings import load_config
 from tracker import CentroidTracker
 
 HERE = Path(__file__).resolve().parent
@@ -23,19 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)-10s %(messag
 log = logging.getLogger("main")
 
 
-def load_config():
-    cfg = yaml.safe_load((HERE / "config.yaml").read_text())
-    local = HERE / "config.local.yaml"           # site specific values, not in git
-    if local.exists():
-        for section, values in (yaml.safe_load(local.read_text()) or {}).items():
-            if isinstance(values, dict):
-                cfg.setdefault(section, {}).update(values)
-            else:
-                cfg[section] = values
-    return cfg
-
-
-cfg = load_config()
+cfg = load_config(HERE)
 profile = cfg["species_profiles"][cfg["species"]]
 classes = (HERE / cfg["model"]["classes"]).read_text().split()
 
@@ -56,29 +44,41 @@ camera.start()
 log.info("model %s (%dx%d), species %s", cfg["model"]["path"], detector.size, detector.size, cfg["species"])
 
 frame_period = 1.0 / cfg["detect_fps"]
-last_frame = 0.0
+last_frame = last_ping = last_snapshot = 0.0
+
+
+def status_word(result):
+    if result.too_dark:
+        return "too dark"
+    if result.alerts:
+        return ",".join(result.alerts)
+    return "ok" if result.baseline_ready else "learning"
 
 
 def loop():
-    global last_frame
-    now = time.time()
+    global last_frame, last_ping, last_snapshot
+    now = time.monotonic()
+    if now - last_ping >= 60:          # keeps LED4 (link heartbeat on the MCU) green
+        last_ping = now
+        probes.ping()
     if now - last_frame >= frame_period:
         last_frame = now
         frame = camera.capture()
         if frame is not None:
             t0 = time.perf_counter()
             detections = detector.detect(frame)
+            infer_ms = (time.perf_counter() - t0) * 1000
             fish = [d for d in detections if d.label == "fish"]
             tracks = tracker.update(fish, now)
             result = monitor.add_frame(now, frame, fish, tracks)
             if result:
                 s = result.summary
                 log.info("fish %2.0f  surface %.2f  speed %.2f BL/s  green %.3f  infer %3.0f ms  %s",
-                         s["n_fish"], s["surface_ratio"], s["mean_speed"], s["green_index"],
-                         (time.perf_counter() - t0) * 1000,
-                         ",".join(result.alerts) if result.alerts else ("ok" if result.baseline_ready else "learning"))
+                         s["n_fish"], s["surface_ratio"], s["mean_speed"], s["green_index"], infer_ms,
+                         status_word(result))
                 datalog.window(result)
-                if result.alerts:
+                if result.alerts and now - last_snapshot >= 60:   # at most one snapshot a minute
+                    last_snapshot = now
                     datalog.snapshot(draw(frame, detections, tracks), "_".join(result.alerts))
                 controller.on_behaviour(result)
     controller.tick()

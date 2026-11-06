@@ -44,8 +44,8 @@ def run(cfg, mode, seconds_after=60, frame=None, still_fish=False):
     pond = Pond()
     img = np.full((H, W, 3), 110, np.uint8) if frame is None else frame
     normal_img = np.full((H, W, 3), 110, np.uint8)
-    # an alert only counts when it shows up in two windows in a row, which is
-    # what the controller needs before it switches the probes on
+    # only count an alert that shows up in two windows in a row, so a single
+    # odd window does not decide the test
     alerts_before, alerts_after, previous = set(), set(), set()
     total = cfg["behaviour"]["baseline_minutes"] * 60 + 60 + seconds_after
     for i in range(int(total * FPS)):
@@ -89,3 +89,22 @@ def test_motionless_fish(cfg):
     cfg["behaviour"]["still_minutes"] = 0.5
     _, after = run(cfg, "normal", still_fish=True)
     assert "motionless_fish" in after
+
+
+def test_dark_windows_raise_nothing(cfg):
+    dark = np.full((H, W, 3), 10, np.uint8)
+    before, after = run(cfg, "few", frame=dark)      # fish "missing" because it is night
+    assert before == set() and after == set()
+
+
+def test_still_time_is_the_longest_in_the_window(cfg):
+    mon = BehaviourMonitor(cfg["behaviour"])
+    tr = CentroidTracker(**cfg["tracker"])
+    img = np.full((H, W, 3), 110, np.uint8)
+    still = Detection(300, 400, 340, 416, 0.9, 0, "fish")
+    result = None
+    for i in range(int(12 * FPS)):
+        t = i / FPS
+        dets = [still] if t < 9 else []              # the fish disappears near the end of the window
+        result = mon.add_frame(t, img, dets, tr.update(dets, t)) or result
+    assert result.summary["longest_still_s"] >= 8

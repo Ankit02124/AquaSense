@@ -1,15 +1,17 @@
 # AquaSense settings. Put your own values (species, calibration) in
-# config.local.yaml next to this file, it overrides whole sections from here.
+# config.local.yaml next to this file. It is merged into this one, so it only
+# needs the keys you change.
 
 species: tilapia          # key from species_profiles below
 altitude_m: 0             # used for the oxygen saturation pressure correction
+timezone: Asia/Kolkata    # for the scheduled checks; the App Lab container may run on UTC
 
 camera:
   source: "usb:0"         # usb:0, /dev/video0 or csi:0
   resolution: [640, 480]
   fps: 10
 
-detect_fps: 3             # frames per second sent to YOLO (the A53 cores manage ~3-4 at 416 px)
+detect_fps: 3             # frames per second sent to YOLO, check what your board manages with tools/benchmark.py
 
 model:
   path: models/aquasense_yolov8n_416.onnx
@@ -35,9 +37,10 @@ behaviour:
   green_jump: 0.03
   clarity_drop: 0.6
   z: 3.0                  # how many standard deviations away from normal counts as abnormal
+  dark_level: 35          # mean brightness (0-255) below which a window is too dark to judge (night)
 
 trigger:
-  confirm_windows: 2      # same alert in 2 windows (20 s) before probes are switched on
+  confirm_windows: 2      # alerts in 2 windows in a row (20 s) before the probes are switched on
   cooldown_min: 15
   followup_min: 10
   scheduled: ["05:00", "15:00"]
@@ -50,6 +53,7 @@ probes:
 outputs:
   buzzer: true            # beep when a reading is CRITICAL
   auto_aerator: false     # switch the aerator relay (D8) when oxygen is low
+  aerator_off_margin: 1.0 # switch it off again only when DO is this much (mg/L) above warn_low
 
 calibration:              # see docs/calibration.md, replace with your probe values
   ph: {v_neutral_mv: 1500.0, v_acid_mv: 2032.44, cal_temp_c: 25.0}

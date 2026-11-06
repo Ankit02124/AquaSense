@@ -1,4 +1,4 @@
-`aquasense_yolov8n_416.onnx` is a YOLOv8n model fine-tuned on the Brackish Dataset (see `training/README.md`), exported at 416x416 without NMS. `classes.txt` lists the class order.
+`aquasense_yolov8n_416.onnx` is a YOLOv8n model (starting from the Ultralytics COCO-pretrained `yolov8n.pt`, AGPL-3.0) fine-tuned on the Brackish Dataset (see `training/README.md`), exported at 416x416 without NMS. `classes.txt` lists the class order.
 
 The dataset is licensed CC BY-SA 4.0, so these weights are shared under the same license (the code in this repository is MIT).
 
