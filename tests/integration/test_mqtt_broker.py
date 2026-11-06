@@ -40,8 +40,13 @@ def test_video_run_publishes_to_broker():
     base = f"aquasense/{device}"
     got = []
 
+    def on_message(client, userdata, msg):
+        if msg.topic.endswith("/cmd") or not msg.payload:  # our own command, a cleared retained message
+            return
+        got.append((msg.topic, json.loads(msg.payload), msg.retain))
+
     sub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"test-{device}")
-    sub.on_message = lambda c, u, m: got.append((m.topic, json.loads(m.payload), m.retain))
+    sub.on_message = on_message
     sub.connect(HOST, PORT)
     sub.subscribe(f"{base}/#", qos=1)
     sub.loop_start()
