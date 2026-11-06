@@ -44,7 +44,7 @@ static bool owReady = false;
 
 enum Phase : uint8_t { PH_IDLE, PH_TEMP_WAIT, PH_NEXT, PH_WARMUP, PH_DONE };
 static const char *const STATE_NAMES[] = {"IDLE", "BUSY", "BUSY", "BUSY", "DONE"};
-enum Flags : uint8_t { F_TEMP_FAIL = 0x01, F_ADC_SAT = 0x02, F_ABORTED = 0x04, F_TIMEOUT = 0x08 };
+enum Flags : uint8_t { F_TEMP_FAIL = 0x01, F_ADC_SAT = 0x02, F_TIMEOUT = 0x08 };
 
 static Phase phase = PH_IDLE;
 static uint8_t reqMask = 0;
@@ -55,9 +55,10 @@ static uint32_t seq = 0;
 static uint32_t phaseStart = 0;
 static float tempC = NAN;
 
-static uint8_t indicatorLevel = 0;
+static uint8_t indicatorLevel = 255;  // 255 = no status from Linux yet, LED off
 static bool buzzerOn = false;
 static uint32_t lastRpcMs = 0;
+static bool rpcSeen = false;           // Linux has called us at least once
 
 // ---------------------------------------------------------------- helpers
 
@@ -126,6 +127,7 @@ static void setLed3(bool r, bool g, bool b) {
 
 static void showLevel() {
   switch (indicatorLevel) {
+    case 255: setLed3(false, false, false); break; // off    - no status yet
     case 0: setLed3(false, true, false); break;   // green  - water ok
     case 1: setLed3(false, false, true); break;   // blue   - measuring
     case 2: setLed3(true, true, false); break;    // yellow - warning
@@ -227,16 +229,19 @@ static bool startMeasurement(uint8_t mask) {
 
 String aq_ping() {
   lastRpcMs = millis();
+  rpcSeen = true;
   return String("AquaSense MCU " FW_VERSION);
 }
 
 int aq_start(int mask) {
   lastRpcMs = millis();
+  rpcSeen = true;
   return startMeasurement((uint8_t)mask) ? 1 : 0;
 }
 
 String aq_status() {
   lastRpcMs = millis();
+  rpcSeen = true;
   String s = STATE_NAMES[phase];
   s += ',';
   s += String(stepNo);
@@ -251,6 +256,7 @@ String aq_status() {
 // (Bridge messages are limited to 256 bytes, this is < 100)
 String aq_result() {
   lastRpcMs = millis();
+  rpcSeen = true;
   if (phase != PH_DONE) return String("");
   String s = "R1;seq=";
   s += String(seq);
@@ -268,14 +274,15 @@ String aq_result() {
 
 int aq_abort() {
   lastRpcMs = millis();
+  rpcSeen = true;
   allProbesOff();
-  if (phase != PH_IDLE && phase != PH_DONE) flags |= F_ABORTED;
   phase = PH_IDLE;
   return 1;
 }
 
 int aq_indicator(int level) {
   lastRpcMs = millis();
+  rpcSeen = true;
   indicatorLevel = (uint8_t)constrain(level, 0, 3);
   showLevel();
   return 1;
@@ -283,6 +290,7 @@ int aq_indicator(int level) {
 
 int aq_buzzer(int on) {
   lastRpcMs = millis();
+  rpcSeen = true;
   buzzerOn = on != 0;
   if (!buzzerOn) digitalWrite(PIN_BUZZER, LOW);
   return buzzerOn;
@@ -290,12 +298,14 @@ int aq_buzzer(int on) {
 
 int aq_aerator(int on) {
   lastRpcMs = millis();
+  rpcSeen = true;
   digitalWrite(PIN_AERATOR, on ? HIGH : LOW);
   return on != 0;
 }
 
 int aq_set_warmup(int channel, int ms) {
   lastRpcMs = millis();
+  rpcSeen = true;
   if (channel < 1 || channel > (int)N_CH) return 0;
   channels[channel - 1].warmupMs = (uint32_t)constrain(ms, 0, (long)MAX_RAIL_ON_MS - 5000L);
   return 1;
@@ -342,7 +352,6 @@ void setup() {
   Bridge.provide_safe("aq_buzzer", aq_buzzer);
   Bridge.provide_safe("aq_aerator", aq_aerator);
   Bridge.provide_safe("aq_set_warmup", aq_set_warmup);
-  lastRpcMs = millis();
 }
 
 void loop() {
@@ -351,10 +360,12 @@ void loop() {
 
   if (buzzerOn) digitalWrite(PIN_BUZZER, (now % 1000) < 200 ? HIGH : LOW);
 
-  // LED4: short green blink every 3 s while Linux talks to us, red if it went quiet
-  const bool linkLost = now - lastRpcMs > LINK_TIMEOUT_MS;
+  // LED4: blue blink until Linux first calls us, then a green blink every 3 s
+  // while it keeps talking (main.py pings every minute), red if it went quiet
+  const bool linkLost = rpcSeen && now - lastRpcMs > LINK_TIMEOUT_MS;
   const bool blink = (now % 3000) < 80;
-  digitalWrite(LED4_G, (blink && !linkLost) ? LOW : HIGH);
+  digitalWrite(LED4_B, (blink && !rpcSeen) ? LOW : HIGH);
+  digitalWrite(LED4_G, (blink && rpcSeen && !linkLost) ? LOW : HIGH);
   digitalWrite(LED4_R, (blink && linkLost) ? LOW : HIGH);
 
   delay(5);

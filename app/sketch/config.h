@@ -21,7 +21,7 @@
 
 // Water temperature. Default is a DS18B20 behind a DS2484 I2C-to-1-Wire bridge
 // on the Qwiic port: bit-banged 1-Wire is not reliable on the Zephyr based core.
-// A 10k NTC on A4 also works (-DTEMP_SENSOR=2).
+// A 10k NTC on A4 also works: change TEMP_SENSOR below to TEMP_SENSOR_NTC.
 #define TEMP_SENSOR_DS2484 1
 #define TEMP_SENSOR_NTC    2
 #ifndef TEMP_SENSOR
