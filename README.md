@@ -4,7 +4,7 @@
 
 Fish pond monitor designed for the Arduino UNO Q. A YOLOv8n model watches the fish through a USB camera, and when their behaviour changes the STM32 switches on the water quality probes (dissolved oxygen, pH, salinity, turbidity, temperature) and reads them.
 
-**Status:** the STM32 firmware and the Python app are written and checked in CI (unit tests and a sketch compile), and the model is trained. The device has not been built yet: nothing has been run on a UNO Q or tested in a pond.
+**Status:** the STM32 firmware and the Python app are written and checked in CI (unit tests, a sketch compile and an MQTT broker test), and the model is trained. MQTT and the dashboard are tested on a PC with a local broker; nothing has been run on a UNO Q yet. The device has not been built or tested in a pond.
 
 This repository has the STM32 firmware, the Python app for the UNO Q's Linux side, the trained fish detection model with its training code, and the hardware design (wiring, schematics, parts).
 
@@ -35,6 +35,7 @@ Fish change how they behave when the water goes bad: they gather and gasp at the
 - **Scheduled and follow-up checks:** 05:00 and 15:00 every day, and every 10 minutes while a value is out of range.
 - **Local alarm and control:** an RGB LED shows the water status, a buzzer sounds on critical readings, and an optional relay starts an aerator when oxygen is low (with hysteresis, so it does not toggle on every reading).
 - **Keeps running when things fail:** if the STM32 stops answering, the measurement is aborted, the probes are switched off and it is retried later instead of the app crashing.
+- **MQTT (optional):** readings, alerts and online/offline status go to an MQTT broker, and a `measure` command can be sent back. A small web dashboard shows them live. Tested on a PC with a local broker (see [MQTT](#mqtt)).
 - **Logging:** every measurement, every 10 s behaviour summary and every alert that starts a measurement go to CSV files in the app's data folder, with camera snapshots of alerts (at most one a minute).
 
 ## Tech stack
@@ -45,6 +46,7 @@ Fish change how they behave when the water goes bad: they gather and gasp at the
 | embedded | C++, Arduino_RouterBridge (RPC between Linux and the MCU), ADC, I2C, 1-Wire via DS2484 |
 | edge AI | YOLOv8n, ONNX Runtime, OpenCV, NumPy |
 | training | Ultralytics YOLOv8, PyTorch (CUDA, RTX 3050 laptop GPU), Kaggle API |
+| connectivity | MQTT (paho-mqtt), Mosquitto, MQTT over WebSockets (mqtt.js) for the dashboard |
 | app and tools | Python, Arduino App Lab, arduino-cli, pytest, GitHub Actions |
 | hardware (planned parts) | DFRobot Gravity pH, DO, EC and turbidity sensors, DS18B20, USB webcam, P-MOSFET probe switches |
 
@@ -57,7 +59,7 @@ Fish change how they behave when the water goes bad: they gather and gasp at the
 3. Every 10 s the behaviour checks compare the numbers with the learned baseline.
 4. When alerts show up in two windows in a row, Python asks the STM32 over the Arduino Bridge to take a measurement.
 5. The STM32 powers each probe in turn, reads it and sends back raw millivolts.
-6. Python converts the readings, checks them against the species limits, logs everything, sets the LED, sounds the buzzer if needed and can switch the aerator.
+6. Python converts the readings, checks them against the species limits, logs everything, publishes it over MQTT if enabled, sets the LED, sounds the buzzer if needed and can switch the aerator.
 
 **Why the UNO Q.** It has two processors on one UNO-sized board. The QRB2210 (4x Cortex-A53, 4 GB RAM, Debian) handles the camera, the neural network and the decision logic in Python. The STM32U585 (Cortex-M33, 160 MHz) owns the 3.3 V headers: the analog inputs, the GPIOs that switch the probes, the Qwiic I2C port and two of the board's four built-in RGB LEDs. Timing-sensitive work (probe warm-up, ADC sampling, switching probes off) stays on the microcontroller, so its timing does not depend on how busy Linux is with YOLO.
 
@@ -132,6 +134,47 @@ Full steps: [docs/uno-q-setup.md](docs/uno-q-setup.md).
   ```
 - **Retrain the model:** see [training/README.md](training/README.md).
 
+## MQTT
+
+When `mqtt.enabled` is `true` in `app/python/config.yaml` (it is off by default), readings and alerts also go to an MQTT broker. The CSV logs are written either way.
+
+| topic | what is sent | QoS | retained |
+|---|---|---|---|
+| `aquasense/<device_id>/readings` | every probe measurement: values, level, reason, advice | 1 | no |
+| `aquasense/<device_id>/alerts` | confirmed camera alerts and CRITICAL water readings | 1 | no |
+| `aquasense/<device_id>/status` | `online` when connected, `offline` as the Last Will and on a clean exit | 1 | yes |
+| `aquasense/<device_id>/cmd` | the app listens here: `measure` starts a measurement | 1 | no |
+
+Every message is JSON with `device`, `ts` (Unix time) and `time` (ISO 8601, UTC). A reading from the PC run below, shortened:
+
+```json
+{"device": "pond1", "time": "2026-11-06T17:08:19+00:00", "reason": "startup", "level": "CRITICAL",
+ "values": {"temperature_c": 28.05, "ph": 7.11, "do_mg_l": 2.09, "salinity_ppt": 0.21, "turbidity_ntu": 31.11},
+ "advice": ["Low dissolved oxygen: switch on aeration, stop feeding, exchange some water."]}
+```
+
+**Why QoS 1.** With QoS 0 a message is sent once and lost if the link drops at that moment, and a lost low-oxygen alarm is the worst thing that can happen here. With QoS 1 the broker acknowledges each message and the client sends it again until it does, so nothing is lost, although a message can occasionally arrive twice. A duplicate reading is harmless because each one carries its own time. QoS 2 (exactly once) costs two more round trips per message for no real gain in this case.
+
+**Retained status and Last Will.** The status message is retained, so a dashboard that connects later sees straight away whether the device is online. When the app connects it also leaves a Last Will of `offline` with the broker. If the device disappears without disconnecting (power cut, Wi-Fi gone), the broker publishes that will on its behalf after about 1.5 times the keep-alive (30 s, so about 45 s). On a normal exit the app publishes `offline` itself, because a clean disconnect does not trigger the will.
+
+**When the broker is unreachable.** Publishing never blocks the main loop. Messages go into a queue (500 by default) that is sent when the connection is back, and when the queue is full the oldest message is dropped, so memory stays bounded. paho-mqtt reconnects in its own thread and waits 1 s, 2 s, 4 s and so on, up to 60 s, between attempts. Commands arrive in that thread and are handed to the main loop through a queue, so the measurement controller is only ever used from one thread.
+
+**Settings** (`mqtt` in `config.yaml`): `enabled`, `host`, `port`, `tls`, `username`, `password_env`, `device_id`, `topic_prefix`, `queue_limit`, `max_backoff_s`, `keepalive_s`. The password is never stored in the file: it is read from the environment variable named in `password_env` (default `AQUASENSE_MQTT_PASSWORD`).
+
+**Try it on a PC** with Mosquitto in Docker:
+
+```
+docker run -it -p 1883:1883 -p 9001:9001 -v "$PWD/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" eclipse-mosquitto:2
+python tools/run_on_video.py clip.avi --mqtt --realtime --water low_oxygen
+```
+
+Then open `dashboard/index.html` in a browser, keep `ws://localhost:9001` and device `pond1`, and press Connect. **Measure now** sends the `measure` command. Without Docker, install Mosquitto and run `mosquitto -c mosquitto.conf`. That config has no login and no TLS, so use it only for local testing.
+
+<p align="center"><img src="docs/images/mqtt_dashboard.gif" width="760" alt="dashboard receiving readings and alerts over MQTT"><br>
+<sub>Recorded on a PC: tools/run_on_video.py with the STM32 stand-in set to low oxygen, a local Mosquitto 2.1 broker, and the dashboard in Microsoft Edge. The second reading is the one started by Measure now. No UNO Q or real probes were involved.</sub></p>
+
+In CI, GitHub Actions starts Mosquitto in Docker with this `mosquitto.conf` and runs `tests/integration/test_mqtt_broker.py`, which plays the demo clip through the app and checks the status, reading, alert and command messages on the broker. The unit tests in `tests/test_mqtt_link.py` use a fake client.
+
 ## Project structure
 
 ```
@@ -152,13 +195,16 @@ app/                        Arduino App Lab app, the folder that goes on the UNO
     ├── chemistry.py        mV -> pH, DO, conductivity, salinity, turbidity, NH3 fraction
     ├── water_check.py      species limits and advice
     ├── datalog.py          CSV logs and snapshots
+    ├── mqtt_link.py        MQTT: readings, alerts, status with Last Will, measure command
     ├── config.yaml         settings, calibration, species profiles
     └── models/             aquasense_yolov8n_416.onnx, classes.txt
 training/                   dataset conversion, training, ONNX export, evaluation, plots, weights
 hardware/                   wiring diagram, schematics, parts and pin notes
 docs/                       how it works, UNO Q setup, calibration, images
 tools/                      run on a video, benchmark the model, calibration helper
-tests/                      pytest for the Python side (run in GitHub Actions with the sketch compile)
+dashboard/                  index.html: live readings, alerts and status over MQTT/WebSockets
+mosquitto.conf              local test broker (MQTT on 1883, WebSockets on 9001)
+tests/                      pytest for the Python side, tests/integration needs a broker (all run in GitHub Actions)
 ```
 
 ## Dataset and models
@@ -176,14 +222,14 @@ I picked the Brackish footage because it is murky, low-visibility water filmed b
 
 ## Results
 
-**Model accuracy** on the held-out test split (1,468 frames):
+**Fish detection**, the class the app uses, on the held-out Brackish test split (1,468 frames): **0.912 mAP@0.5 at 416 px**, the input size the app uses.
 
-| input size | precision | recall | mAP@0.5 | mAP@0.5:0.95 |
+| fish class | precision | recall | mAP@0.5 | mAP@0.5:0.95 |
 |---|---|---|---|---|
-| 640 px (training size) | 0.957 | 0.934 | 0.966 | 0.739 |
-| 416 px (input size used by the app) | 0.949 | 0.882 | 0.939 | 0.671 |
+| 416 px (input size used by the app) | 0.924 | 0.844 | 0.912 | 0.603 |
+| 640 px (training size) | 0.947 | 0.907 | 0.957 | 0.683 |
 
-For the fish class alone mAP@0.5 is 0.957 at 640 px and 0.912 at 416 px. Per-class numbers are in [training/results/metrics.md](training/results/metrics.md). The official split is per frame, so test frames come from the same videos as the training frames. A new pond will score lower until the model is fine-tuned on its own footage.
+All five classes (fish, crab, shrimp, jellyfish, starfish) for reference: mAP@0.5 0.939 at 416 px and 0.966 at 640 px. Per-class numbers are in [training/results/metrics.md](training/results/metrics.md). The official split is per frame, so test frames come from the same videos as the training frames. A new pond will score lower until the model is fine-tuned on its own footage.
 
 Training curves (loss and validation metrics per epoch):
 
@@ -197,7 +243,7 @@ Test images, ground truth labels on the left and the exported ONNX model on the 
 
 **Inference speed:** about 17 ms per frame for the 416 px model with ONNX Runtime on a laptop CPU (Intel 12th gen, 4 threads, median of 50 runs, `tools/benchmark.py`). It has not been measured on a UNO Q yet; `tools/benchmark.py` is there for that.
 
-## Photos
+## Parts used (reference photos)
 
 <table>
   <tr>
@@ -212,7 +258,15 @@ Test images, ground truth labels on the left and the exported ONNX model on the 
   </tr>
 </table>
 
-These are stock photos of the parts in the design, not photos of a built device. Credits and licenses: [docs/images/components/CREDITS.md](docs/images/components/CREDITS.md).
+These are credited stock photos of the parts in the design, not photos of the build. Credits and licenses: [docs/images/components/CREDITS.md](docs/images/components/CREDITS.md).
+
+## Limitations
+
+- The device has not been built or run on a UNO Q, and the probes have not been calibrated with real hardware.
+- The model was trained on Brackish footage, not a farm pond, so it will score lower on a real pond until it is fine-tuned on that pond's video.
+- The behaviour rules are statistical thresholds and have not been tested on real fish in distress.
+- The camera cannot see at night, when oxygen usually drops. The fixed 05:00 measurement is there to cover this.
+- Inference speed on the UNO Q has not been measured. The 17 ms figure is from a laptop CPU.
 
 ## Future scope
 
@@ -223,7 +277,7 @@ These are stock photos of the parts in the design, not photos of a built device.
 - Add ammonia (NH4+ ion-selective electrode) and ORP probes.
 - Quantise the model to INT8 for faster inference on the A53 cores.
 - SMS or LoRa alerts for farms without Wi-Fi, and solar power with sleep between checks.
-- Several nodes per farm reporting to one place.
+- Several devices per farm, each publishing under its own `aquasense/<device_id>/...` topics to one broker, with one dashboard for all ponds.
 
 ## Credits and license
 

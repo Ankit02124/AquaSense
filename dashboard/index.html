@@ -69,8 +69,9 @@
 <script>
 const LABELS = {
   temperature_c: ["Temperature", "°C"], ph: ["pH", ""], do_mg_l: ["Dissolved oxygen", "mg/L"],
-  do_sat_pct: ["DO saturation", "%"], ec_ms_cm: ["Conductivity", "mS/cm"], salinity_ppt: ["Salinity", "ppt"],
-  tds_ppm: ["TDS", "ppm"], turbidity_ntu: ["Turbidity", "NTU"], nh3_fraction: ["NH3 share of ammonia", ""],
+  do_sat_pct: ["DO saturation", "%"], ec_ms_cm: ["Conductivity", "mS/cm"],
+  ec25_ms_cm: ["Conductivity at 25 °C", "mS/cm"], salinity_ppt: ["Salinity", "ppt"],
+  tds_ppm: ["TDS", "ppm"], turbidity_ntu: ["Turbidity", "NTU"], nh3_fraction: ["NH3 share of ammonia", "%", 100],
 };
 const $ = (id) => document.getElementById(id);
 const local = (iso) => new Date(iso).toLocaleTimeString();
@@ -96,9 +97,9 @@ function showReading(msg) {
   const table = $("values");
   table.replaceChildren();
   for (const [key, value] of Object.entries(msg.values)) {
-    const [name, unit] = LABELS[key] || [key, ""];
+    const [name, unit, scale = 1] = LABELS[key] || [key, ""];
     const row = table.insertRow();
-    row.append(el("td", name), el("td", `${Number(value).toFixed(2)} ${unit}`));
+    row.append(el("td", name), el("td", `${(Number(value) * scale).toFixed(2)} ${unit}`));
   }
   $("advice").replaceChildren(...(msg.advice || []).map((t) => el("li", t)));
 }
