@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AquaSense dashboard</title>
+<!-- mqtt.js 5.14.1, pinned with a hash so a changed file is refused -->
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.14.1/dist/mqtt.min.js"
+        integrity="sha384-Fn2zaZeH/P7E88cwiBDKmBmrB35pj8a5baa5IzXAvBvF8pTFOJD3aHe3V8BtMsr6"
+        crossorigin="anonymous"></script>
+<style>
+  :root { --bg: #f6f8fa; --card: #fff; --text: #1f2328; --muted: #656d76; --line: #d0d7de;
+          --ok: #1a7f37; --warn: #9a6700; --crit: #cf222e; --off: #6e7781; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8d96a0; --line: #30363d;
+            --ok: #3fb950; --warn: #d29922; --crit: #f85149; --off: #8d96a0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
+  input[name=url] { width: 220px; } input[name=device] { width: 110px; }
+  button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--card);
+           color: var(--text); cursor: pointer; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; color: #fff; font-weight: 600; }
+  .OK, .online { background: var(--ok); } .WARNING { background: var(--warn); }
+  .CRITICAL { background: var(--crit); } .offline, .unknown { background: var(--off); }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 3px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  ul { margin: 0; padding-left: 18px; } li { margin-bottom: 4px; }
+  .muted { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>AquaSense</h1>
+<form id="connect">
+  <input name="url" value="ws://localhost:9001" aria-label="broker WebSocket URL">
+  <input name="device" value="pond1" aria-label="device id">
+  <button>Connect</button>
+  <button type="button" id="measure" disabled>Measure now</button>
+  <span class="muted" id="conn">not connected</span>
+</form>
+
+<div class="grid">
+  <div class="card">
+    <h2>Device</h2>
+    <span id="state" class="pill unknown">unknown</span>
+    <div class="muted" id="state-time"></div>
+  </div>
+  <div class="card">
+    <h2>Latest reading</h2>
+    <span id="level" class="pill unknown">-</span>
+    <div class="muted" id="reading-meta"></div>
+    <table id="values"></table>
+    <ul id="advice" class="muted"></ul>
+  </div>
+  <div class="card">
+    <h2>Alerts</h2>
+    <ul id="alerts"><li class="muted">none yet</li></ul>
+  </div>
+</div>
+
+<script>
+const LABELS = {
+  temperature_c: ["Temperature", "°C"], ph: ["pH", ""], do_mg_l: ["Dissolved oxygen", "mg/L"],
+  do_sat_pct: ["DO saturation", "%"], ec_ms_cm: ["Conductivity", "mS/cm"], salinity_ppt: ["Salinity", "ppt"],
+  tds_ppm: ["TDS", "ppm"], turbidity_ntu: ["Turbidity", "NTU"], nh3_fraction: ["NH3 share of ammonia", ""],
+};
+const $ = (id) => document.getElementById(id);
+const local = (iso) => new Date(iso).toLocaleTimeString();
+let client = null, base = "";
+
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+function showStatus(msg) {
+  $("state").textContent = msg.state;
+  $("state").className = "pill " + msg.state;
+  $("state-time").textContent = (msg.state === "online" ? "online since " : "last seen ") + local(msg.time);
+}
+
+function showReading(msg) {
+  $("level").textContent = msg.level;
+  $("level").className = "pill " + msg.level;
+  $("reading-meta").textContent = `${local(msg.time)}, ${msg.reason}`;
+  const table = $("values");
+  table.replaceChildren();
+  for (const [key, value] of Object.entries(msg.values)) {
+    const [name, unit] = LABELS[key] || [key, ""];
+    const row = table.insertRow();
+    row.append(el("td", name), el("td", `${Number(value).toFixed(2)} ${unit}`));
+  }
+  $("advice").replaceChildren(...(msg.advice || []).map((t) => el("li", t)));
+}
+
+function showAlert(msg) {
+  const list = $("alerts");
+  if (list.querySelector(".muted")) list.replaceChildren();
+  const what = msg.kind === "water" ? `water: ${msg.alerts.join(", ")}` : `camera: ${msg.alerts.join(", ")}`;
+  list.prepend(el("li", `${local(msg.time)}  ${what}`));
+  while (list.children.length > 20) list.lastChild.remove();
+}
+
+$("connect").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (client) client.end(true);
+  const url = e.target.url.value.trim();
+  base = `aquasense/${e.target.device.value.trim()}`;
+  client = mqtt.connect(url, { reconnectPeriod: 2000 });
+  $("conn").textContent = "connecting to " + url;
+  client.on("connect", () => {
+    $("conn").textContent = "connected to " + url;
+    $("measure").disabled = false;
+    client.subscribe(`${base}/+`, { qos: 1 });
+  });
+  client.on("close", () => { $("conn").textContent = "broker not reachable, retrying"; $("measure").disabled = true; });
+  client.on("message", (topic, payload) => {
+    if (!payload.length) return;          // cleared retained message
+    let msg;
+    try { msg = JSON.parse(payload.toString()); } catch { return; }
+    if (topic.endsWith("/status")) showStatus(msg);
+    else if (topic.endsWith("/readings")) showReading(msg);
+    else if (topic.endsWith("/alerts")) showAlert(msg);
+  });
+});
+
+$("measure").addEventListener("click", () => client && client.publish(`${base}/cmd`, "measure", { qos: 1 }));
+</script>
+</body>
+</html>

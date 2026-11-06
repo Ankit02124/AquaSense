@@ -21,3 +21,19 @@ jobs:
       - run: arduino-cli core update-index
       - run: arduino-cli core install arduino:zephyr
       - run: arduino-cli compile --fqbn arduino:zephyr:unoq app/sketch
+
+  mqtt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: start Mosquitto with the repo's mosquitto.conf
+        run: docker run -d --name mosquitto -p 1883:1883 -p 9001:9001 -v "$PWD/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" eclipse-mosquitto:2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q -s tests/integration
+        env:
+          MQTT_TEST_HOST: localhost
+      - if: failure()
+        run: docker logs mosquitto

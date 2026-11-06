@@ -12,6 +12,9 @@ After a camera-triggered measurement, further camera triggers are ignored for
 `cooldown_min` so the probes are not cycled all day by one event. A failed
 measurement (MCU not answering, timeout) is retried after `followup_min`.
 
+If an MqttLink is passed in, every reading goes to <prefix>/<device>/readings and
+confirmed camera alerts and CRITICAL readings go to <prefix>/<device>/alerts.
+
 Durations use a monotonic clock, so a clock change at boot (NTP sync) does not
 break timeouts. Scheduled times use the wall clock in `timezone` from the config.
 """
@@ -38,9 +41,10 @@ def _timezone(name):
 
 
 class Controller:
-    def __init__(self, cfg, probes, calibration, profile, datalog=None, clock=time.time, mono=None):
+    def __init__(self, cfg, probes, calibration, profile, datalog=None, clock=time.time, mono=None, mqtt=None):
         t = cfg["trigger"]
         self.probes, self.cal, self.profile, self.datalog = probes, calibration, profile, datalog
+        self.mqtt = mqtt
         self.clock = clock                                   # wall clock: schedule, timestamps
         self.mono = mono or (time.monotonic if clock is time.time else clock)
         self.tz = _timezone(cfg.get("timezone"))
@@ -74,6 +78,9 @@ class Controller:
                         ", ".join(result.alerts), self.streak)
             if self.datalog:
                 self.datalog.event("camera_alert", ";".join(result.alerts), result.summary)
+            if self.mqtt:
+                self.mqtt.alert("behaviour", result.alerts,
+                                detail={k: round(v, 3) for k, v in result.summary.items()})
             self.request("camera", result.alerts)
             self.streak = 0
 
@@ -149,6 +156,13 @@ class Controller:
             log.warning("  advice: %s", tip)
         if self.datalog:
             self.datalog.measurement(reading, self.reason, water_check.LEVEL_NAMES[level], raw.encode(), tips)
+        if self.mqtt:
+            self.mqtt.reading(reading, self.reason, water_check.LEVEL_NAMES[level], tips)
+            if level == water_check.CRITICAL:
+                bad = [(name, value, direction) for name, value, _, lvl, direction in rows
+                       if lvl == water_check.CRITICAL]
+                self.mqtt.alert("water", [f"{name} {direction}" for name, _, direction in bad], "CRITICAL",
+                                {name: round(value, 3) for name, value, _ in bad})
 
         self.probes.indicator(level)
         self.probes.buzzer(self.use_buzzer and level == water_check.CRITICAL)

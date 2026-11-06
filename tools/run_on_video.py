@@ -6,6 +6,7 @@ how docs/images/demo.gif was made.
     python tools/run_on_video.py clip.avi --out annotated.mp4
     python tools/run_on_video.py clip.avi --gif docs/images/demo.gif --gif-seconds 8
     python tools/run_on_video.py pond.mp4 --save-raw frames/ --raw-every 5   # clean frames for labelling
+    python tools/run_on_video.py clip.avi --mqtt --realtime   # publish to a local broker (README, "MQTT")
 
 The MCU is replaced by FakeProbes, so camera alerts still lead to a (fake)
 measurement and the log has the same format as the app's log.
@@ -14,6 +15,7 @@ measurement and the log has the same format as the app's log.
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 import cv2
@@ -24,6 +26,7 @@ sys.path.insert(0, str(APP))
 from behaviour import BehaviourMonitor  # noqa: E402
 from controller import Controller  # noqa: E402
 from fish_detector import FishDetector, draw  # noqa: E402
+from mqtt_link import MqttLink  # noqa: E402
 from probes import Calibration, FakeProbes  # noqa: E402
 from settings import load_config  # noqa: E402
 from tracker import CentroidTracker  # noqa: E402
@@ -42,6 +45,12 @@ def main():
     ap.add_argument("--baseline-minutes", type=float, default=None)
     ap.add_argument("--save-raw", help="folder for un-annotated frames (to label for fine-tuning)")
     ap.add_argument("--raw-every", type=int, default=5, help="save every Nth analysed frame")
+    ap.add_argument("--mqtt", action="store_true", help="publish to the broker in config.yaml (mqtt section)")
+    ap.add_argument("--mqtt-host", help="override mqtt.host")
+    ap.add_argument("--mqtt-port", type=int, help="override mqtt.port")
+    ap.add_argument("--device-id", help="override mqtt.device_id")
+    ap.add_argument("--realtime", action="store_true", help="play the video at its real speed (for the dashboard)")
+    ap.add_argument("--loops", type=int, default=1, help="play the video this many times")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(name)-10s %(message)s")
@@ -60,21 +69,38 @@ def main():
     step = max(1, round(src_fps / fps))
     video_t = [0.0]
     probes = FakeProbes(condition=args.water, clock=lambda: video_t[0])
+    mqtt = None
+    if args.mqtt:
+        mcfg = dict(cfg.get("mqtt", {}))
+        for key, value in (("host", args.mqtt_host), ("port", args.mqtt_port), ("device_id", args.device_id)):
+            if value is not None:
+                mcfg[key] = value
+        mqtt = MqttLink(mcfg)
+        mqtt.start()
     controller = Controller(cfg, probes, Calibration.from_config(cfg["calibration"]),
-                            cfg["species_profiles"][cfg["species"]], clock=lambda: video_t[0])
+                            cfg["species_profiles"][cfg["species"]], clock=lambda: video_t[0], mqtt=mqtt)
 
     if args.save_raw:
         Path(args.save_raw).mkdir(parents=True, exist_ok=True)
     writer, gif_frames, idx, analysed = None, [], 0, 0
+    loops_left, offset, wall_start = args.loops, 0, time.monotonic()
     while True:
         ok, frame = cap.read()
         if not ok:
-            break
+            loops_left -= 1
+            if loops_left <= 0:
+                break
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            offset += idx
+            idx = 0
+            continue
         idx += 1
         if idx % step or idx < args.start * src_fps:
             continue
-        t = idx / src_fps - args.start
+        t = (offset + idx) / src_fps - args.start
         video_t[0] = t
+        if args.realtime:
+            time.sleep(max(0.0, t - (time.monotonic() - wall_start)))
         analysed += 1
         if args.save_raw and analysed % args.raw_every == 0:
             cv2.imwrite(str(Path(args.save_raw) / f"{Path(args.video).stem}_{idx:06d}.jpg"), frame)
@@ -88,6 +114,11 @@ def main():
                   f"speed={s['mean_speed']:.2f} "
                   f"{'too dark' if result.too_dark else ','.join(result.alerts) or ('ok' if result.baseline_ready else 'learning')}")
             controller.on_behaviour(result)
+        if mqtt:
+            for cmd in mqtt.take_commands():
+                if cmd == "measure":
+                    print(f"t={t:6.1f}s mqtt command: measure")
+                    controller.request("mqtt command")
         controller.tick()
 
         vis = draw(frame, dets, tracks)
@@ -103,6 +134,8 @@ def main():
             h, w = vis.shape[:2]
             small = cv2.resize(vis, (args.gif_width, int(h * args.gif_width / w)), interpolation=cv2.INTER_AREA)
             gif_frames.append(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
+    if mqtt:
+        mqtt.stop()
     if writer:
         writer.release()
     if gif_frames:

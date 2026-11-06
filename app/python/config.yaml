@@ -55,6 +55,19 @@ outputs:
   auto_aerator: false     # switch the aerator relay (D8) when oxygen is low
   aerator_off_margin: 1.0 # switch it off again only when DO is this much (mg/L) above warn_low
 
+mqtt:
+  enabled: false          # true to publish readings and alerts, see README "MQTT"
+  host: localhost
+  port: 1883             # 8883 is the usual port with TLS
+  tls: false              # true = encrypted connection, checked against the system CA certificates
+  username: ""            # empty for a broker without login
+  password_env: AQUASENSE_MQTT_PASSWORD   # the password is read from this environment variable, never from this file
+  device_id: pond1        # topics are <topic_prefix>/<device_id>/...
+  topic_prefix: aquasense
+  queue_limit: 500        # messages kept while the broker is unreachable, the oldest is dropped when full
+  max_backoff_s: 60       # reconnect wait doubles from 1 s up to this
+  keepalive_s: 30         # the broker publishes the Last Will about 1.5x this long after the link is lost
+
 calibration:              # see docs/calibration.md, replace with your probe values
   ph: {v_neutral_mv: 1500.0, v_acid_mv: 2032.44, cal_temp_c: 25.0}
   # with a pH 10 buffer as well: ph: {cal_temp_c: 27.5, points: [[2041, 4.0], [1512, 7.0], [990, 10.0]]}

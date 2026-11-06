@@ -4,3 +4,4 @@ opencv-python-headless
 PyYAML
 onnxruntime
 Pillow
+paho-mqtt>=2.0

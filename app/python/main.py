@@ -14,6 +14,7 @@ from behaviour import BehaviourMonitor
 from controller import Controller
 from datalog import DataLog
 from fish_detector import FishDetector, draw
+from mqtt_link import MqttLink
 from probes import Calibration, McuProbes
 from settings import load_config
 from tracker import CentroidTracker
@@ -33,10 +34,16 @@ tracker = CentroidTracker(**cfg["tracker"])
 monitor = BehaviourMonitor(cfg["behaviour"])
 datalog = DataLog(HERE.parent / "data")
 
+mqtt = None
+if cfg.get("mqtt", {}).get("enabled"):
+    mqtt = MqttLink(cfg["mqtt"])
+    mqtt.start()   # connects in the background, never blocks
+
 probes = McuProbes()
 log.info("MCU: %s", probes.ping())
 probes.set_warmups(cfg["probes"]["warmup_ms"])
-controller = Controller(cfg, probes, Calibration.from_config(cfg["calibration"], cfg["altitude_m"]), profile, datalog)
+controller = Controller(cfg, probes, Calibration.from_config(cfg["calibration"], cfg["altitude_m"]), profile, datalog,
+                        mqtt=mqtt)
 
 cam_cfg = cfg["camera"]
 camera = Camera(cam_cfg["source"], resolution=tuple(cam_cfg["resolution"]), fps=cam_cfg["fps"])
@@ -81,6 +88,10 @@ def loop():
                     last_snapshot = now
                     datalog.snapshot(draw(frame, detections, tracks), "_".join(result.alerts))
                 controller.on_behaviour(result)
+    if mqtt:
+        for cmd in mqtt.take_commands():
+            if cmd == "measure" and not controller.request("mqtt command"):
+                log.info("measure command ignored, a measurement is already running or queued")
     controller.tick()
     time.sleep(0.05)
 
@@ -90,3 +101,5 @@ try:
 finally:
     probes.abort()
     camera.stop()
+    if mqtt:
+        mqtt.stop()
