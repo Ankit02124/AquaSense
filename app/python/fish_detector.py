@@ -118,7 +118,7 @@ def draw(frame, detections, tracks=None):
         cv2.putText(out, f"{d.label} {d.conf:.2f}", (int(d.x1), max(int(14 * s), int(d.y1) - int(4 * s))),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5 * s, c, text, cv2.LINE_AA)
     for t in tracks or []:
-        pts = [(int(x), int(y)) for _, x, y in t.history]
+        pts = [(int(x), int(y)) for _, x, y in list(t.history)[-6:]]  # short trail, readable in a school
         for a, b in zip(pts, pts[1:]):
             cv2.line(out, a, b, (0, 255, 0), line)
     return out

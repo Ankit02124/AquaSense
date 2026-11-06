@@ -82,7 +82,7 @@ def analog_frontend() -> None:
     with schemdraw.Drawing(file=str(OUT / "analog_frontend.svg"), show=False) as d:
         d.config(fontsize=FONT, unit=2.4)
         # (a) pH / DO / EC
-        title(d, "(a) Analog input conditioning — pH (A0), DO (A1), EC (A2)", (-4, 4.2))
+        title(d, "(a) Analog input conditioning: pH (A0), DO (A1), EC (A2)", (-4, 4.2))
         note(d, "RC low-pass fc ≈ 1.6 kHz; dual Schottky clamp keeps the pin inside 0 … 3.3 V.", (-4, 3.5))
         d.add(elm.Dot(open=True).at((0, 0)).label("Probe board" + NL + "signal out" + NL + "(0 – 3.0 V)", loc="left"))
         d.add(elm.Resistor().at((0, 0)).to((3, 0)).label("R4  1 kΩ"))
@@ -101,7 +101,7 @@ def analog_frontend() -> None:
 
         # (b) turbidity divider
         y0 = -7.5
-        title(d, "(b) Turbidity divider — A3", (-4, y0 + 3.0))
+        title(d, "(b) Turbidity divider: A3", (-4, y0 + 3.0))
         note(d, "V_A3 = V_sensor × 20k / (10k + 20k): 4.5 V → 3.0 V   (divider_ratio: 1.5 in config.yaml)", (-4, y0 + 2.3))
         d.add(elm.Dot(open=True).at((0, y0)).label("Turbidity SEN0189" + NL + "analog out" + NL + "(0 – 4.5 V @ 5 V)", loc="left"))
         d.add(elm.Resistor().at((0, y0)).to((3, y0)).label("R5  10 kΩ"))
@@ -152,14 +152,14 @@ def temperature_and_outputs() -> None:
             wire(d, (x, y), (x + 2.0, y))
             d.add(elm.Dot(open=True).at((x + 2.0, y)).label(label, loc="right"))
         xmin, ymin, xmax, ymax = ic.get_bbox(transform=True)
-        title(d, "(a) Water temperature — waterproof DS18B20 via DS2484 I²C→1-Wire bridge (Qwiic, Wire1)", (-6, ymax + 1.6))
+        title(d, "(a) Water temperature: waterproof DS18B20 via DS2484 I²C→1-Wire bridge (Qwiic, Wire1)", (-6, ymax + 1.6))
         y4 = ymin + 0.4
         note(d, "DS18B20 VDD (red) → +3V3 (external power, not parasitic). No pin-header I/O is used for 1-Wire,", (-6, y4 - 1.6))
         note(d, "because bit-banged 1-Wire timing is unreliable under the Zephyr core.", (-6, y4 - 2.2))
 
         # (b) buzzer
         by = y4 - 5.0
-        title(d, "(b) Alarm buzzer — D9", (-6, by + 1.2))
+        title(d, "(b) Alarm buzzer: D9", (-6, by + 1.2))
         d.add(elm.Vdd().at((3, by)).label("+5V_SYS"))
         bz = d.add(elm.ResistorIEC().at((3, by)).down(2.0).label("BZ1  5 V active buzzer", loc="top", ofst=(0.2, 0)))
         q3 = d.add(elm.BjtNpn(circle=True).theta(0).anchor("collector").at(bz.end)
@@ -172,7 +172,7 @@ def temperature_and_outputs() -> None:
 
         # (c) aerator relay
         ry = byy - 6.8
-        title(d, "(c) Optional aerator relay — D8   (mains side: qualified electrician only!)", (-6, ry + 3.4))
+        title(d, "(c) Optional aerator relay: D8 (mains side by an electrician)", (-6, ry + 3.4))
         d.add(elm.Dot(open=True).at((-2, ry)).label("MCU D8", loc="left"))
         wire(d, (-2, ry), (0, ry))
         rl = d.add(elm.Ic(pins=[elm.IcPin(name="IN", side="left"), elm.IcPin(name="NO/COM", side="right")],
