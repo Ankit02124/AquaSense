@@ -37,7 +37,7 @@ After conversion: 5,896 training images (every 2nd frame), 1,467 val, 1,468 test
 python training/train.py --data data/brackish-yolo/brackish.yaml
 ```
 
-YOLOv8n from COCO weights, 640 px, batch 16, 60 epochs (early stopping patience 15), mosaic switched off for the last 10 epochs, slightly stronger brightness augmentation because the underwater lighting changes a lot. Training took 1.1 hours on an RTX 3050 Laptop GPU (4 GB). The best weights are in [weights/yolov8n_brackish_best.pt](weights/yolov8n_brackish_best.pt) and the full training log in [results/results.csv](results/results.csv).
+YOLOv8n from COCO weights, 640 px, batch 16, 60 epochs (early stopping patience 15), mosaic switched off for the last 10 epochs, slightly stronger brightness augmentation because the underwater lighting changes a lot. Training took 1.1 hours on an RTX 3050 Laptop GPU (4 GB). The best weights are in [weights/yolov8n_brackish_best.pt](weights/yolov8n_brackish_best.pt), the full training log in [results/results.csv](results/results.csv) and the training arguments in [results/train_args.yaml](results/train_args.yaml) (local paths shortened). With this Ultralytics version the run folder is `runs/detect/runs/yolov8n_brackish/`.
 
 ## Model accuracy
 
@@ -77,12 +77,12 @@ python training/export.py --weights training/weights/yolov8n_brackish_best.pt --
 python training/evaluate.py --weights training/weights/yolov8n_brackish_best.pt --data data/brackish-yolo/brackish.yaml
 ```
 
-`export.py` writes `app/python/models/aquasense_yolov8n_416.onnx` (opset 12, no NMS in the graph) and `classes.txt`. 416 px is a compromise: at 640 px small fish are found more often, but the A53 cores take roughly 2.4x longer per frame. `tools/benchmark.py` measures the speed on the board.
+`export.py` writes `app/python/models/aquasense_yolov8n_416.onnx` (opset 12, no NMS in the graph) and `classes.txt`. 416 px is a compromise: at 640 px small fish are found more often (see the accuracy table above), but a 640 px input has about 2.4x the pixels of a 416 px one, so it needs roughly that much more compute per frame. `tools/benchmark.py` measures the real speed on the board.
 
 ## Fine-tuning on your own pond
 
 The Brackish camera sits 9 m deep in a strait with an LED light on, so its fish look different from tilapia in a farm pond. To adapt the model:
 
-1. Save frames from the pond camera (the app already saves snapshots on alerts, or use `tools/run_on_video.py`).
+1. Record a few videos of the pond with the same camera, then pull clean frames out of them with `python tools/run_on_video.py pond.mp4 --save-raw frames/ --raw-every 5`. (The app's alert snapshots have boxes drawn on them, so they are not usable as training images.)
 2. Label a few hundred of them in YOLO format (Label Studio, CVAT, Roboflow).
-3. Add them to the dataset folders and run `train.py` with `--model runs/.../best.pt` and fewer epochs.
+3. Add them to the dataset folders and run `train.py` with `--model training/weights/yolov8n_brackish_best.pt` and fewer epochs.

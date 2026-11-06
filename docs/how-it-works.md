@@ -46,13 +46,13 @@ For the first 5 minutes after start-up these windows only feed the baseline (run
 | motionless_fish | one fish not moving for 3 minutes | dead or sick fish |
 | water_colour | water much greener or less clear than normal | algal bloom, turbidity |
 
-Windows with an alert are not added to the baseline, so a problem that lasts a long time does not become the new normal.
+Windows with an alert are not added to the baseline, so a problem that lasts a long time does not become the new normal. The fish rules (all but `motionless_fish` and `water_colour`) only run when at least 3 fish are normally in view (`min_fish`). Windows darker than `dark_level` (night without IR light) raise no alerts and are left out of the baseline, so a black image is never taken for "fish missing".
 
 ## 4. When the probes are switched on
 
 `controller.py` starts a measurement when:
 
-- the camera reports alerts in **two windows in a row** (20 s). A single odd window is common with only a handful of fish in view, so it does not trigger anything.
+- the camera reports alerts in **two windows in a row** (20 s). They don't have to be the same alert. A single odd window is common with only a handful of fish in view, so it does not trigger anything.
 - a **scheduled time** is reached: 05:00, when dissolved oxygen is lowest and the camera sees little, and 15:00, when pH and temperature peak.
 - the last result was WARNING or CRITICAL. It then re-measures every 10 minutes until the water is back in range.
 - the app starts, to get one reference reading.
@@ -110,7 +110,9 @@ A full measurement takes about 35 s. That is too long for one Bridge call, so Py
 | `aq_buzzer(on)`, `aq_aerator(on)` | outputs on D9 and D8 |
 | `aq_set_warmup(channel, ms)` | warm-up per probe |
 
-`f` in the result is a bit field: 1 = temperature failed, 2 = ADC saturated, 4 = aborted, 8 = a probe hit the 60 s limit.
+`f` in the result is a bit field: 1 = temperature failed, 2 = ADC saturated, 8 = a probe hit the 60 s limit.
+
+If a Bridge call fails or times out (MCU not answering), `probes.py` returns safe values instead of raising, the controller treats it as a failed measurement, switches the probes off and retries after the follow-up interval. Scheduled times are read in the `timezone` set in `config.yaml`, because the App Lab container may run on UTC.
 
 The MCU only sends raw millivolts. Calibration lives in Python (`chemistry.py`), so changing calibration never needs a re-flash, and the raw value is stored in `measurements.csv` in case the calibration has to be redone later.
 
@@ -132,7 +134,7 @@ The project has no web app. Everything is visible in the App Lab console and in 
 
 - `measurements.csv`: every probe reading with the reason, level, raw string and advice
 - `behaviour.csv`: one row per 10 s window with all metrics and alerts
-- `events.csv`: camera alerts and failed measurements
+- `events.csv`: camera alerts that started a measurement, and failed measurements
 - `snapshots/`: annotated camera frames saved whenever an alert fires
 
-On the board itself, LED3 shows the water status, the buzzer sounds on CRITICAL, and the optional relay can start an aerator.
+On the board itself, LED3 shows the water status, the buzzer sounds on CRITICAL, and the optional relay can start an aerator. The aerator is switched off again only when DO is 1 mg/L above the warning level (`aerator_off_margin`), so it does not toggle on every reading near the limit. LED4 blinks green while Linux keeps talking to the MCU (it pings once a minute) and red if it stops.

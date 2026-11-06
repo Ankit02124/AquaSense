@@ -184,8 +184,23 @@ def temperature_and_outputs() -> None:
         note(d, "Module VCC → +5V_SYS, GND → GND. Use a contactor rated for the aerator motor's inrush current.", (-6, ry - 2.0))
 
 
+def white_background():
+    """schemdraw writes transparent SVGs with black lines, which disappear in
+    GitHub's dark mode. Give each file a white background."""
+    for svg in OUT.glob("*.svg"):
+        text = svg.read_text(encoding="utf-8")
+        if 'style="background' in text:
+            continue
+        x, y, w, h = text.split('viewBox="', 1)[1].split('"', 1)[0].split()
+        head, rest = text.split(">", 1)
+        head = head.replace("<svg ", '<svg style="background-color:#ffffff" ', 1)
+        svg.write_text(f'{head}><rect x="{x}" y="{y}" width="{w}" height="{h}" fill="#ffffff"/>{rest}',
+                       encoding="utf-8")
+
+
 if __name__ == "__main__":
     power_switch()
     analog_frontend()
     temperature_and_outputs()
+    white_background()
     print("SVGs written to", OUT)

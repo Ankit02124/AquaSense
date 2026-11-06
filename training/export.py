@@ -1,10 +1,10 @@
 """
 Export the trained weights to ONNX for the UNO Q and copy them into the app.
 
-    python training/export.py --weights runs/yolov8n_brackish/weights/best.pt --imgsz 416
+    python training/export.py --weights training/weights/yolov8n_brackish_best.pt --imgsz 416
 
 416 px is a compromise for the Cortex-A53: 640 px detects small fish better but
-is about 2.4x slower. NMS is not baked into the graph, app/python/fish_detector.py
+has about 2.4x the pixels to process. NMS is not baked into the graph, app/python/fish_detector.py
 does it in numpy.
 """
 

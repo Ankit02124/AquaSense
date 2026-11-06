@@ -21,7 +21,7 @@ app/                         <- this folder is the Arduino App Lab app
 
 ## Steps
 
-1. **Set up the board.** Install Arduino App Lab on a PC, connect the UNO Q with USB-C, and go through the first-run wizard (Wi-Fi, password, updates). Install all updates. The Bridge and some analog-input fixes came with them.
+1. **Set up the board.** Install Arduino App Lab on a PC, connect the UNO Q with USB-C, and go through the first-run wizard (Wi-Fi, password, updates) and install all offered updates.
 
 2. **Copy the app to the board.** Either zip the `app` folder and use *Import app* in App Lab, or copy it over SSH:
 
@@ -31,7 +31,7 @@ app/                         <- this folder is the Arduino App Lab app
 
 3. **Connect the camera.** Plug the webcam into a powered USB-C hub on the board's USB-C port, and power the board from VIN. Check it shows up with `ls /dev/video*` in the App Lab terminal. If it is not `video0`, change `camera.source` in the config.
 
-4. **Site settings.** Create `app/python/config.local.yaml` with only what differs from `config.yaml`. Keys are merged one level deep, so `behaviour: {surface_band: 1.0}` changes just that value:
+4. **Site settings.** Create `app/python/config.local.yaml` with only what differs from `config.yaml`. It is merged into `config.yaml` key by key (nested sections too), so `behaviour: {surface_band: 1.0}` changes just that value. Also set `timezone` if you are not in India, the 05:00 / 15:00 checks use it:
 
    ```yaml
    species: indian_major_carp
@@ -55,15 +55,17 @@ The same information is written to `data/behaviour.csv`, `data/measurements.csv`
 
 ## Checking the probes one by one
 
-Before connecting a probe, check its switch with a multimeter. `SW_5V_x` must read 0 V when idle and about 5 V during a measurement (the LED turns blue). Then connect the probes one at a time and look at the `raw` column in `data/measurements.csv`. Every value should be in millivolts within 0-3300.
+Before connecting a probe, check its switch with a multimeter. `SW_5V_x` must read 0 V when idle and about 5 V only while its own probe is being read (the probes are switched one after another during a measurement, LED3 is blue). Then connect the probes one at a time and look at the `raw` column in `data/measurements.csv`. Every value should be in millivolts within 0-3300.
 
 ## Inference speed
 
-Run this on the board (from the App Lab terminal or over SSH):
+The app only needs the `app/` folder, so copy the benchmark script and the app code to the board first, then run it in a virtual environment (Debian does not allow system-wide `pip install`):
 
 ```
-pip install onnxruntime opencv-python-headless numpy
-python tools/benchmark.py --model app/python/models/aquasense_yolov8n_416.onnx
+scp -r app tools arduino@<board-ip>:~/aquasense-bench/
+ssh arduino@<board-ip>
+python3 -m venv ~/bench && ~/bench/bin/pip install onnxruntime opencv-python-headless numpy
+cd ~/aquasense-bench && ~/bench/bin/python tools/benchmark.py --model app/python/models/aquasense_yolov8n_416.onnx
 ```
 
 If it is too slow, lower `detect_fps`, or export a 320 px model with `python training/export.py --weights ... --imgsz 320` and point `model.path` at it.

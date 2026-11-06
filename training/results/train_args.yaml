@@ -1,3 +1,4 @@
+# Ultralytics training arguments for training/weights/yolov8n_brackish_best.pt (local paths shortened)
 task: detect
 mode: train
 model: yolov8n.pt

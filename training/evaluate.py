@@ -2,7 +2,7 @@
 Evaluate on the held-out test split at the training size and at the size used
 on the board, and write the numbers to training/results/metrics.md.
 
-    python training/evaluate.py --weights runs/yolov8n_brackish/weights/best.pt \
+    python training/evaluate.py --weights training/weights/yolov8n_brackish_best.pt \
         --data data/brackish-yolo/brackish.yaml
 """
 

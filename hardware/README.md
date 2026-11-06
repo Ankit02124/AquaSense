@@ -24,7 +24,7 @@ The DFRobot probe boards were chosen because they are easy to buy and have docum
 
 ## Pin map
 
-All MCU pins on the UNO Q are 3.3 V. A0-A5 are not 5 V tolerant when used as analog inputs (absolute max about 3.6 V), which is why every analog input has a clamp and the turbidity sensor has a divider.
+All MCU pins on the UNO Q are 3.3 V. A0-A5 are not 5 V tolerant when used as analog inputs (absolute max about 3.6 V), which is why the pH, DO and EC inputs (A0-A2) have a BAT54S clamp and the 5 V turbidity sensor goes through a divider on A3.
 
 | Pin | Connected to |
 |---|---|
@@ -42,7 +42,7 @@ All MCU pins on the UNO Q are 3.3 V. A0-A5 are not 5 V tolerant when used as ana
 | VIN | 12 V |
 | USB-C | hub → webcam |
 
-The on-board RGB LED3 shows the last water status (green ok, blue measuring, yellow warning, red critical). LED4 blinks green every 3 s while Linux is talking to the MCU and red if it stops.
+The on-board RGB LED3 shows the last water status (green ok, blue measuring, yellow warning, red critical) and stays off until the first reading. LED4 is a link heartbeat: it blinks blue until Linux first talks to the MCU, then green every 3 s (main.py pings the MCU once a minute), and red if Linux has been silent for 15 minutes.
 
 ## Schematics
 
@@ -64,7 +64,7 @@ pH, EC and DO probes sit in the same water, so their grounds are connected throu
 
 ## Why a DS2484 for the temperature probe
 
-Bit-banged 1-Wire timing is not reliable on the Zephyr based UNO Q core (several people on the Arduino forum hit the same problem). The DS2484 does the 1-Wire timing in hardware and talks I2C, which works fine. If you don't have one, a 10k NTC on A4 works too: build with `-DTEMP_SENSOR=2`.
+Bit-banged 1-Wire timing is not reliable on the Zephyr-based UNO Q core. The DS2484 generates the 1-Wire timing in hardware, and the MCU talks to it over I2C on the Qwiic port (`Wire1`). If you don't have one, a 10k NTC on A4 works too: set `TEMP_SENSOR` to `TEMP_SENSOR_NTC` in `app/sketch/config.h`.
 
 ## Power
 

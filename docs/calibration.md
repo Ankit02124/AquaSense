@@ -12,14 +12,23 @@ The defaults in `config.yaml` are typical values for the DFRobot boards. Every p
 The sketch only reports raw millivolts. They are in the `raw` column of `data/measurements.csv`, for example:
 
 ```
-R1;seq=3;t=27.50;ph=1512.4;do=1585.0;ec=233.0;tu=2805.0;f=0
+R1;seq=3;t=27.50;ph=1512.40;do=1585.00;ec=233.00;tu=2805.00;f=0
 ```
 
-Put the probe in the reference solution, start a measurement (restart the app or wait for the next one), take the value from the last row, and let `tools/calibration_helper.py` do the arithmetic. Put the printed lines in `app/python/config.local.yaml`.
+Put the probe in the reference solution, start a measurement (restart the app or wait for the next one), take the value from the last row, and let `tools/calibration_helper.py` do the arithmetic. Collect the printed lines under one `calibration:` key in `app/python/config.local.yaml`, for example:
+
+```yaml
+calibration:
+  ph: {cal_temp_c: 27.5, points: [[2041.3, 4.0], [1512.4, 7.0], [990.2, 10.0]]}
+  do: {mode: single, cal1_mv: 1585.0, cal1_temp_c: 28.0}
+  ec: {k_low: 1.0314}
+```
+
+The file is merged into `config.yaml`, so anything you leave out keeps its default.
 
 ## pH (pH 4.00, 7.00 and 10.00 buffers)
 
-Rinse the probe, put it in pH 7.00, wait a minute, note `ph=` and `t=`. Repeat in pH 4.00 and, if you have it, pH 10.00. Pond water often sits between pH 7.5 and 9, so the third buffer above 7 noticeably improves accuracy there.
+Rinse the probe, put it in pH 7.00, wait a minute, note `ph=` and `t=`. Repeat in pH 4.00 and, if you have it, pH 10.00. Pond water often sits between pH 7.5 and 9. With only the pH 4 and 7 buffers that range is extrapolated beyond the calibration points, the pH 10 buffer puts a point on the other side of it.
 
 ```
 python tools/calibration_helper.py ph --mv7 1512.4 --mv4 2041.3 --mv10 990.2 --temp 27.5
